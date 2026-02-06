@@ -1,0 +1,48 @@
+name: Neural Network Toolbox CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    # ----------------------------
+    # Step 1: Checkout Repository
+    # ----------------------------
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # ----------------------------
+    # Step 2: Setup Python
+    # ----------------------------
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+
+    # ----------------------------
+    # Step 3: Install Dependencies
+    # ----------------------------
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    # ----------------------------
+    # Step 4: Run Basic Checks
+    # ----------------------------
+    - name: Run basic syntax check
+      run: |
+        python -m compileall core ui app.py
+
+    # ----------------------------
+    # Step 5: Optional - Run Tests
+    # ----------------------------
+    - name: Run tests (if any)
+      run: |
+        if [ -d "tests" ]; then pytest; else echo "No tests found"; fi
