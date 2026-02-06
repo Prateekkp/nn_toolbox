@@ -2,6 +2,9 @@ from pathlib import Path
 
 import streamlit as st
 from src.ui.perceptron_ui import perceptron_page
+from src.ui.forward_propagation import forward_propagation_page
+from src.ui.backward_propagation import backward_propagation_page
+from src.ui.mlp import mlp_page
 
 # ---------------------------
 # Page Configuration
@@ -24,14 +27,22 @@ page = st.sidebar.radio(
         "Home",
         "Perceptron",
         "Forward Propagation",
-        "Backward Propagation"
+        "Backward Propagation",
+        "Multi-Layer Perceptron (MNP)"
     ]
 )
 
 st.sidebar.markdown("---")
 
+st.sidebar.subheader("Documentation and Code")
+doc_page = st.sidebar.radio(
+    "Select Documentation",
+    ["None", "Perceptron", "MNP"],
+    key="doc_nav"
+)
+
 # Spacer to push content down
-st.sidebar.markdown("<div style='height: 45vh;'></div>", unsafe_allow_html=True)
+st.sidebar.markdown("<div style='height: 25vh;'></div>", unsafe_allow_html=True)
 
 if st.sidebar.button("Reset Session"):
     st.session_state.clear()
@@ -43,6 +54,9 @@ if st.sidebar.button("Reset Session"):
 # ---------------------------
 # Main Content Routing
 # ---------------------------
+if doc_page != "None":
+    page = f"Docs - {doc_page}"
+
 if page == "Home":
 
     # ---------------------------
@@ -91,26 +105,27 @@ elif page == "Perceptron":
     perceptron_page()
 
 elif page == "Forward Propagation":
-
-    st.subheader("Forward Propagation")
-
-    st.markdown("""
-    Forward propagation is the process by which input data flows through
-    the network to produce an output.
-    """)
-
-    st.warning("Forward propagation logic and visual flow will appear here.")
+    forward_propagation_page()
 
 elif page == "Backward Propagation":
+    backward_propagation_page()
 
-    st.subheader("Backward Propagation")
+elif page == "Multi-Layer Perceptron (MNP)":
+    mlp_page()
 
+elif page == "Docs - Perceptron":
+
+    st.subheader("Perceptron Documentation and Code")
     st.markdown("""
-    Backpropagation is the learning mechanism of neural networks.
-    It updates weights using gradients calculated from the loss function.
+    Add theory notes, equations, and code snippets for the perceptron here.
     """)
 
-    st.warning("Backward propagation and weight update visualization will appear here.")
+elif page == "Docs - MNP":
+
+    st.subheader("MNP Documentation and Code")
+    st.markdown("""
+    Add documentation and code references for MNP here.
+    """)
 
 # ---------------------------
 # Footer (Global, Minimal)
