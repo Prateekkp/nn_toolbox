@@ -2,7 +2,7 @@ import streamlit as st
 
 
 def forward_propagation_docs_page() -> None:
-	st.subheader("Forward Propagation - Beginner-Friendly Notes")
+	st.subheader("Forward Propagation")
 
 	left, center, right = st.columns([1, 2, 1])
 	with center:
