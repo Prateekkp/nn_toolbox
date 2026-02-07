@@ -2,6 +2,10 @@ from pathlib import Path
 
 import streamlit as st
 from src.ui.perceptron_ui import perceptron_page
+from src.assets.documnets.perceptron import perceptron_docs_page
+from src.assets.documnets.forward_propagation import forward_propagation_docs_page
+from src.assets.documnets.back_propagation import back_propagation_docs_page
+from src.assets.documnets.mnp import mnp_docs_page
 from src.ui.forward_propagation import forward_propagation_page
 from src.ui.backward_propagation import backward_propagation_page
 from src.ui.mlp import mlp_page
@@ -32,17 +36,25 @@ page = st.sidebar.radio(
     ]
 )
 
+st.sidebar.info(
+    "To choose a module first set below to 'None'"
+)
+
+
 st.sidebar.markdown("---")
 
-st.sidebar.subheader("Documentation and Code")
+st.sidebar.subheader("Documentation")
 doc_page = st.sidebar.radio(
     "Select Documentation",
-    ["None", "Perceptron", "MNP"],
+    ["None", "Perceptron", 
+     "Forward Propagation", 
+     "Backward Propagation", 
+     "Multi-Layer Perceptron (MNP)"],
     key="doc_nav"
 )
 
 # Spacer to push content down
-st.sidebar.markdown("<div style='height: 25vh;'></div>", unsafe_allow_html=True)
+st.sidebar.markdown("<div style='height: 15vh;'></div>", unsafe_allow_html=True)
 
 if st.sidebar.button("Reset Session"):
     st.session_state.clear()
@@ -114,18 +126,16 @@ elif page == "Multi-Layer Perceptron (MNP)":
     mlp_page()
 
 elif page == "Docs - Perceptron":
+    perceptron_docs_page()
 
-    st.subheader("Perceptron Documentation and Code")
-    st.markdown("""
-    Add theory notes, equations, and code snippets for the perceptron here.
-    """)
+elif page == "Docs - Forward Propagation":
+    forward_propagation_docs_page()
 
-elif page == "Docs - MNP":
+elif page == "Docs - Backward Propagation":
+    back_propagation_docs_page()
 
-    st.subheader("MNP Documentation and Code")
-    st.markdown("""
-    Add documentation and code references for MNP here.
-    """)
+elif page == "Docs - Multi-Layer Perceptron (MNP)":
+    mnp_docs_page()
 
 # ---------------------------
 # Footer (Global, Minimal)
