@@ -2,7 +2,7 @@ import streamlit as st
 
 
 def perceptron_docs_page() -> None:
-	st.subheader("Perceptron - Beginner-Friendly Notes")
+	st.subheader("Perceptron")
 
 	left, center, right = st.columns([1, 2, 1])
 	with center:
