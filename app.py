@@ -54,14 +54,14 @@ doc_page = st.sidebar.radio(
 )
 
 # Spacer to push content down
-st.sidebar.markdown("<div style='height: 15vh;'></div>", unsafe_allow_html=True)
+# st.sidebar.markdown("<div style='height: 15vh;'></div>", unsafe_allow_html=True)
 
-if st.sidebar.button("Reset Session"):
-    st.session_state.clear()
-    if hasattr(st, "rerun"):
-        st.rerun()
-    else:
-        st.experimental_rerun()
+# if st.sidebar.button("Reset Session"):
+#     st.session_state.clear()
+#     if hasattr(st, "rerun"):
+#         st.rerun()
+#     else:
+#         st.experimental_rerun()
 
 # ---------------------------
 # Main Content Routing
