@@ -85,10 +85,11 @@ if page == "Home":
         unsafe_allow_html=True
     )
 
+
     image_path = Path(__file__).parent / "src" / "assets" / "nn_image.jpg"
     col_left, col_center, col_right = st.columns([1, 1, 1])
     with col_center:
-        st.image(str(image_path), width=1200)
+        st.image(str(image_path), width=500)
 
     st.subheader("About This Toolbox")
 
