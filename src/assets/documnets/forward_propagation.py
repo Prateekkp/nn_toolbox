@@ -15,7 +15,7 @@ def forward_propagation_docs_page() -> None:
 
 	st.markdown(
 		"""
-## 1. What is Forward Propagation?
+### 1. What is Forward Propagation?
 
 **Forward propagation** is the process by which **input data moves forward through a neural network to produce an output**.
 
@@ -25,7 +25,7 @@ No learning happens here - only calculation.
 
 ---
 
-## 2. Why Forward Propagation is Important
+### 2. Why Forward Propagation is Important
 
 - Every **prediction** uses forward propagation
 - Backpropagation depends entirely on its output
@@ -35,7 +35,7 @@ Think of it as: **decision making before correction**.
 
 ---
 
-## 3. Basic Flow (High Level)
+### 3. Basic Flow (High Level)
 
 1. Take input features
 2. Multiply by weights
@@ -46,7 +46,7 @@ Think of it as: **decision making before correction**.
 
 ---
 
-## 4. Forward Propagation in a Single Neuron
+### 4. Forward Propagation in a Single Neuron
 
 **Step 1: Weighted Sum**
 """
@@ -81,7 +81,7 @@ Output $a$ becomes input for the next layer.
 
 ---
 
-## 5. Forward Propagation in a Multi-Layer Network (MLP)
+### 5. Forward Propagation in a Multi-Layer Network (MLP)
 
 **Layer 1 (Hidden Layer)**
 """
@@ -113,8 +113,7 @@ Output $a$ becomes input for the next layer.
 Where $a^{(0)} = X$ (input layer).
 
 ---
-
-## 6. Activation Functions (Intuition + Math)
+### 6. Activation Functions (Intuition + Math)
 
 **1. Sigmoid**
 """
@@ -153,7 +152,7 @@ Where $a^{(0)} = X$ (input layer).
 
 ---
 
-## 7. Forward Propagation Example (Simple)
+### 7. Forward Propagation Example (Simple)
 
 Suppose:
 
@@ -181,7 +180,7 @@ That is the neuron's output.
 
 ---
 
-## 8. Output Layer Forward Propagation
+### 8. Output Layer Forward Propagation
 
 **Binary Classification:**
 """
