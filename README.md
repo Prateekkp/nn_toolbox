@@ -3,8 +3,12 @@
 ![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.x-ff4b4b)
 ![License](https://img.shields.io/badge/License-MIT-green)
+[![Live App](https://img.shields.io/badge/Live%20App-Streamlit-0aa5a8)](https://nn-tool-box.streamlit.app/)
 
 An interactive Streamlit app for learning core neural network concepts by building them from scratch. The app includes hands-on modules for perceptron, forward propagation, backward propagation, and a multi-layer perceptron (MLP) with visualizations and dataset support.
+
+[Click Here to the app!](https://nn-tool-box.streamlit.app/)  
+<span style="color: #6c757d;">Since it's freely deployed, you may need to wake up the app.</span>
 
 ## Highlights
 
