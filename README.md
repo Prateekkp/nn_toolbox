@@ -7,7 +7,10 @@
 
 An interactive Streamlit app for learning core neural network concepts by building them from scratch. The app includes hands-on modules for perceptron, forward propagation, backward propagation, and a multi-layer perceptron (MLP) with visualizations and dataset support.
 
-[Click Here to the app!](https://nn-tool-box.streamlit.app/)  
+<a href="https://nn-tool-box.streamlit.app/" target="_blank">
+   Click Here to Open the App
+</a>
+
 <span style="color: #6c757d;">Since it's freely deployed, you may need to wake up the app.</span>
 
 ## Highlights
