@@ -5,7 +5,7 @@
 ![License](https://img.shields.io/badge/License-MIT-green)
 [![Live App](https://img.shields.io/badge/Live%20App-Streamlit-0aa5a8)](https://nn-tool-box.streamlit.app/)
 
-An interactive Streamlit app for learning core neural network concepts by building them from scratch. The app includes hands-on modules for perceptron, forward propagation, backward propagation, and a multi-layer perceptron (MLP) with visualizations and dataset support.
+An interactive Streamlit app for learning core neural network concepts and computer vision techniques. The app includes hands-on modules for perceptron, forward propagation, backward propagation, multi-layer perceptron (MLP), and OpenCV-based object detection with visualizations and dataset support.
 
 <a href="https://nn-tool-box.streamlit.app/" target="_blank">
    Click Here to Open the App
@@ -19,7 +19,9 @@ An interactive Streamlit app for learning core neural network concepts by buildi
 - Perceptron training with logic gates or custom CSV
 - Forward and backward propagation walkthroughs
 - MLP classifier with binary and multiclass support
-- Built-in sample datasets (AND, IRIS)
+- OpenCV-based detection (Face, Eye, Smile, Stop Sign, Face Count)
+- Real-time webcam detection and image upload support
+- Built-in sample datasets (AND, IRIS) and detection samples
 
 ## Project Structure
 
@@ -39,6 +41,10 @@ An interactive Streamlit app for learning core neural network concepts by buildi
    │     └─ perceptron.py
    ├─ core/
    │  └─ perceptron.py
+   ├─ open_cv/
+   │  ├─ cascades/
+   │  ├─ sample/
+   │  └─ open_cv_detection.py
    └─ ui/
       ├─ backward_propagation.py
       ├─ forward_propagation.py
@@ -55,13 +61,15 @@ flowchart TB
     B --> D[Forward Prop UI]
     B --> E[Backward Prop UI]
     B --> F[MLP UI]
-    A --> G[Docs Pages]
-    G --> H[Perceptron Docs]
-    G --> I[Forward Prop Docs]
-    G --> J[Backward Prop Docs]
-    G --> K[MLP Docs]
-    C --> L[data/ OR uploaded CSV]
-    F --> L
+    B --> G[OpenCV Detection UI]
+    A --> H[Docs Pages]
+    H --> I[Perceptron Docs]
+    H --> J[Forward Prop Docs]
+    H --> K[Backward Prop Docs]
+    H --> L[MLP Docs]
+    C --> M[data/ OR uploaded CSV]
+    F --> M
+    G --> N[Webcam OR Image Upload]
 ```
 
 ## Module Flow
@@ -98,12 +106,15 @@ streamlit run app.py
 
 - Use the sidebar to choose a module or open documentation pages.
 - For Perceptron and MLP modules, select a logic gate or upload a CSV file.
-- Configure parameters and run training to visualize results.
+- For OpenCV Detection, choose detection type (Face, Eye+Smile, Stop Sign, Face Count).
+- Select input method: webcam for real-time detection or upload/sample images.
+- Configure parameters and run training/detection to visualize results.
 
 ## Data Input Rules
 
-- Perceptron module expects exactly two binary feature columns and a binary target.
-- MLP module supports binary or multiclass targets and handles numeric and categorical features.
+- **Perceptron**: Expects exactly two binary feature columns and a binary target.
+- **MLP**: Supports binary or multiclass targets and handles numeric and categorical features.
+- **OpenCV Detection**: Accepts webcam feed or image files (JPG, JPEG, PNG). Uses Haar Cascade classifiers.
 - Large datasets are rejected to keep performance stable in the UI.
 
 ## Notes
