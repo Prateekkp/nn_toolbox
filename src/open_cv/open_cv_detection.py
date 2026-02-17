@@ -1,6 +1,8 @@
 import cv2
 import streamlit as st
 import numpy as np
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
+import av
 
 
 def opencv_detection_page():
@@ -9,10 +11,6 @@ def opencv_detection_page():
     st.title("Detection using OpenCV")
     
     st.info("ℹ️ We are using Haar Cascade classifiers for detection. Results may not be 100% accurate as this is a classical computer vision approach.")
-
-    # Session state init
-    if "camera_on" not in st.session_state:
-        st.session_state.camera_on = False
 
     # Detection type selection
     detection_type = st.radio(
@@ -127,96 +125,119 @@ def opencv_detection_page():
         # WEBCAM MODE
         # -----------------------------
         if mode == "Webcam":
-
-            start = st.button("Start Camera")
-
-            if start:
-                st.session_state.camera_on = True
-
-            if st.session_state.camera_on:
-                cap = cv2.VideoCapture(0)
-                frame_placeholder = st.empty()
-
-                stop = st.button("Stop Camera")
-
-                while st.session_state.camera_on:
-                    ret, frame = cap.read()
-                    if not ret:
-                        st.error("Camera not accessible")
-                        break
-
-                    if detection_type == "Real Time Face Count":
-                        output, count = detect_and_count_faces(frame)
-                        frame_rgb = cv2.cvtColor(output, cv2.COLOR_BGR2RGB)
-                    elif detection_type == "Stop Sign Detection":
-                        output = detect_stop_sign(frame)
-                        frame_rgb = cv2.cvtColor(output, cv2.COLOR_BGR2RGB)
-                    else:
-                        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                        faces = face_cascade.detectMultiScale(
-                            gray,
-                            scaleFactor=1.3,
-                            minNeighbors=5
-                        )
-
-                        for (x, y, w, h) in faces:
-                            if detection_type == "Face Detection":
-                                cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-                                cv2.putText(
-                                    frame,
-                                    "Face",
-                                    (x, y - 10),
-                                    cv2.FONT_HERSHEY_SIMPLEX,
-                                    0.8,
-                                    (0, 255, 0),
-                                    2
-                                )
-                            else:  # Eye + Smile Detection
-                                cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
-
-                                roi_gray = gray[y:y + h, x:x + w]
-                                roi_color = frame[y:y + h, x:x + w]
-
-                                # Eyes
-                                eyes = eye_cascade.detectMultiScale(
-                                    roi_gray,
-                                    scaleFactor=1.1,
-                                    minNeighbors=10
-                                )
-
-                                for (ex, ey, ew, eh) in eyes:
-                                    cv2.rectangle(roi_color,
-                                                  (ex, ey),
-                                                  (ex + ew, ey + eh),
-                                                  (0, 255, 0), 2)
-
-                                # Smile
-                                smiles = smile_cascade.detectMultiScale(
-                                    roi_gray,
-                                    scaleFactor=1.7,
-                                    minNeighbors=20
-                                )
-
-                                for (sx, sy, sw, sh) in smiles:
-                                    cv2.rectangle(roi_color,
-                                                  (sx, sy),
-                                                  (sx + sw, sy + sh),
-                                                  (0, 0, 255), 2)
-                                    cv2.putText(roi_color, "Smile",
-                                                (sx, sy - 10),
-                                                cv2.FONT_HERSHEY_SIMPLEX,
-                                                0.6,
-                                                (0, 0, 255), 2)
-
-                        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-                    frame_placeholder.image(frame_rgb, channels="RGB")
-
-                    if stop:
-                        st.session_state.camera_on = False
-                        cap.release()
-                        frame_placeholder.empty()
-                        break
+            st.info("🎥 Real-time webcam detection. Click 'START' to begin streaming.")
+            
+            # Create a video processor class for real-time detection
+            class VideoProcessor(VideoProcessorBase):
+                def __init__(self):
+                    self.detection_type = detection_type
+                    self.face_cascade = face_cascade if detection_type != "Stop Sign Detection" else None
+                    self.eye_cascade = eye_cascade if detection_type == "Eye + Smile Detection" else None
+                    self.smile_cascade = smile_cascade if detection_type == "Eye + Smile Detection" else None
+                
+                def recv(self, frame):
+                    img = frame.to_ndarray(format="bgr24")
+                    
+                    if self.detection_type == "Real Time Face Count":
+                        img, count = self.detect_and_count_faces(img)
+                    elif self.detection_type == "Stop Sign Detection":
+                        img = self.detect_stop_sign(img)
+                    elif self.detection_type == "Face Detection":
+                        img = self.detect_faces(img)
+                    else:  # Eye + Smile Detection
+                        img = self.detect_eyes_smile(img)
+                    
+                    return av.VideoFrame.from_ndarray(img, format="bgr24")
+                
+                def detect_and_count_faces(self, frame):
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5)
+                    
+                    for (x, y, w, h) in faces:
+                        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                    
+                    face_count = len(faces)
+                    cv2.putText(frame, f"People Count: {face_count}", (20, 40),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 3)
+                    return frame, face_count
+                
+                def detect_stop_sign(self, image):
+                    image = cv2.resize(image, (600, 400))
+                    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+                    
+                    lower_red1 = np.array([0, 80, 50])
+                    upper_red1 = np.array([10, 255, 255])
+                    lower_red2 = np.array([170, 80, 50])
+                    upper_red2 = np.array([180, 255, 255])
+                    
+                    mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+                    mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+                    mask = mask1 | mask2
+                    
+                    kernel = np.ones((5, 5), np.uint8)
+                    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+                    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+                    
+                    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    
+                    for cnt in contours:
+                        area = cv2.contourArea(cnt)
+                        if area > 1500:
+                            x, y, w, h = cv2.boundingRect(cnt)
+                            aspect_ratio = w / float(h)
+                            if 0.8 < aspect_ratio < 1.2:
+                                cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 3)
+                                cv2.putText(image, "STOP SIGN", (x, y - 10),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                    return image
+                
+                def detect_faces(self, frame):
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5)
+                    
+                    for (x, y, w, h) in faces:
+                        cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                        cv2.putText(frame, "Face", (x, y - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                    return frame
+                
+                def detect_eyes_smile(self, frame):
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5)
+                    
+                    for (x, y, w, h) in faces:
+                        cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
+                        
+                        roi_gray = gray[y:y + h, x:x + w]
+                        roi_color = frame[y:y + h, x:x + w]
+                        
+                        # Eyes
+                        eyes = self.eye_cascade.detectMultiScale(roi_gray, scaleFactor=1.1, minNeighbors=10)
+                        for (ex, ey, ew, eh) in eyes:
+                            cv2.rectangle(roi_color, (ex, ey), (ex + ew, ey + eh), (0, 255, 0), 2)
+                        
+                        # Smile
+                        smiles = self.smile_cascade.detectMultiScale(roi_gray, scaleFactor=1.7, minNeighbors=20)
+                        for (sx, sy, sw, sh) in smiles:
+                            cv2.rectangle(roi_color, (sx, sy), (sx + sw, sy + sh), (0, 0, 255), 2)
+                            cv2.putText(roi_color, "Smile", (sx, sy - 10),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                    return frame
+            
+            # Start the webrtc streamer with size constraints
+            webrtc_streamer(
+                key="opencv-detection",
+                mode=WebRtcMode.SENDRECV,
+                video_processor_factory=VideoProcessor,
+                media_stream_constraints={
+                    "video": {
+                        "width": {"ideal": 640},
+                        "height": {"ideal": 480}
+                    },
+                    "audio": False
+                },
+                async_processing=True,
+            )
 
         # -----------------------------
         # IMAGE MODE
