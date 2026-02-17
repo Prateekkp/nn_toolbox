@@ -9,6 +9,7 @@ from src.assets.documnets.mnp import mnp_docs_page
 from src.ui.forward_propagation import forward_propagation_page
 from src.ui.backward_propagation import backward_propagation_page
 from src.ui.mlp import mlp_page
+from src.open_cv.open_cv_detection import opencv_detection_page
 
 # ---------------------------
 # Page Configuration
@@ -32,7 +33,8 @@ page = st.sidebar.radio(
         "Perceptron",
         "Forward Propagation",
         "Backward Propagation",
-        "Multi-Layer Perceptron (MNP)"
+        "Multi-Layer Perceptron (MNP)",
+        "OpenCV"
     ]
 )
 
@@ -126,6 +128,9 @@ elif page == "Backward Propagation":
 
 elif page == "Multi-Layer Perceptron (MNP)":
     mlp_page()
+
+elif page == "OpenCV":
+    opencv_detection_page()
 
 elif page == "Docs - Perceptron":
     perceptron_docs_page()
