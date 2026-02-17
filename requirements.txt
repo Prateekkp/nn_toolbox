@@ -5,4 +5,4 @@ streamlit>=1.30.0
 scikit-learn
 plotly
 altair<5
-opencv-python 
+opencv-python
