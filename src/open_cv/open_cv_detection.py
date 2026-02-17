@@ -316,13 +316,13 @@ def opencv_detection_page():
             else:  # Sample Image
                 # Select sample image based on detection type
                 if detection_type == "Face Detection":
-                    sample_path = r"C:\PK\Data Analysis\Projects\nn_toolbox\src\open_cv\sample\group_pic.jpg"
+                    sample_path = "src/open_cv/sample/group_pic.jpg"
                 elif detection_type == "Eye + Smile Detection":
-                    sample_path = r"C:\PK\Data Analysis\Projects\nn_toolbox\src\open_cv\sample\henry.jpg"
+                    sample_path = "src/open_cv/sample/henry.jpg"
                 elif detection_type == "Real Time Face Count":
-                    sample_path = r"C:\PK\Data Analysis\Projects\nn_toolbox\src\open_cv\sample\group_pic.jpg"
+                    sample_path = "src/open_cv/sample/group_pic.jpg"
                 else:  # Stop Sign Detection
-                    sample_path = r"C:\PK\Data Analysis\Projects\nn_toolbox\src\open_cv\sample\stop_sign.png"
+                    sample_path = "src/open_cv/sample/stop_sign.png"
                 
                 if st.button("Load Sample Image"):
                     image = cv2.imread(sample_path)
