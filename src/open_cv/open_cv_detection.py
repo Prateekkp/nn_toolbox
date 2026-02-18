@@ -115,18 +115,17 @@ def detect_faces_ensemble(
 # ---------------------------------------------------------------------------
 # Pre-process frame for faster, more robust detection
 # ---------------------------------------------------------------------------
-def _preprocess(frame: np.ndarray, detect_width: int = 480) -> tuple[np.ndarray, float]:
+def _preprocess(frame: np.ndarray, max_width: int = 640) -> tuple[np.ndarray, float]:
     """
-    Downscale a COPY of the frame to detect_width for fast cascade detection.
-    The original frame is never modified — bounding boxes are scaled back up
-    so drawings always happen on the full-resolution frame, preserving quality.
+    Resize frame so its width ≤ max_width (keeps aspect ratio),
+    convert to grayscale, and equalise histogram.
 
-    Returns (gray_eq_small, scale) where scale = original_width / small_width.
+    Returns (gray_eq, scale) where scale = original_width / resized_width.
     """
     h, w = frame.shape[:2]
-    if w > detect_width:
-        scale = w / detect_width
-        new_w, new_h = detect_width, int(h / scale)
+    if w > max_width:
+        scale = w / max_width
+        new_w, new_h = max_width, int(h / scale)
         small = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
     else:
         scale = 1.0
@@ -337,21 +336,9 @@ def opencv_detection_page():
             key=_streamer_key,
             mode=WebRtcMode.SENDRECV,
             video_processor_factory=VideoProcessor,
-            # Request HD from the browser before WebRTC compression kicks in.
-            # Higher source resolution = better quality after encoding.
             media_stream_constraints={
-                "video": {
-                    "width":     {"ideal": 1280, "min": 640},
-                    "height":    {"ideal": 720,  "min": 480},
-                    "frameRate": {"ideal": 30,   "min": 15},
-                },
+                "video": {"width": {"ideal": 640}, "height": {"ideal": 480}},
                 "audio": False,
-            },
-            # Force the player element to fill its container at full width.
-            video_html_attrs={
-                "style": "width:100%; height:auto;",
-                "controls": False,
-                "autoPlay": True,
             },
             async_processing=True,
         )
