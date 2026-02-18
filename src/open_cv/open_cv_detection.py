@@ -4,6 +4,29 @@ import numpy as np
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 import av
 import os
+import tempfile
+
+# ---------------------------------------------------------------------------
+# Environment detection — are we running locally or on Streamlit Cloud?
+# ---------------------------------------------------------------------------
+def _is_local() -> bool:
+    """
+    Returns True when the app is running on the user's local machine.
+    Streamlit Community Cloud sets the HOSTNAME env-var to a value that
+    contains 'streamlit' or sets IS_STREAMLIT_CLOUD.  We also check for
+    the absence of a display (headless servers) as a secondary signal.
+    """
+    hostname = os.environ.get("HOSTNAME", "").lower()
+    if "streamlit" in hostname:
+        return False
+    # Streamlit Cloud sets this variable
+    if os.environ.get("IS_STREAMLIT_CLOUD") or os.environ.get("STREAMLIT_SHARING_MODE"):
+        return False
+    return True
+
+
+IS_LOCAL = _is_local()
+
 
 # ---------------------------------------------------------------------------
 # Cascade paths
@@ -248,6 +271,197 @@ def run_stop_sign_detection(image: np.ndarray) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
+# Helper: apply detection to a single frame
+# ---------------------------------------------------------------------------
+def _apply_detection(img, detection_type, face_cascades, eye_cascade, smile_cascade):
+    if detection_type == "Real Time Face Count":
+        img, _ = run_face_count(img, face_cascades)
+    elif detection_type == "Stop Sign Detection":
+        img = run_stop_sign_detection(img)
+    elif detection_type == "Face Detection":
+        img = run_face_detection(img, face_cascades)
+    else:  # Eye + Smile Detection
+        img = run_eye_smile_detection(img, face_cascades, eye_cascade, smile_cascade)
+    return img
+
+
+# ---------------------------------------------------------------------------
+# Local webcam mode — uses cv2.VideoCapture (no WebRTC, no lag)
+# ---------------------------------------------------------------------------
+def _run_local_webcam(detection_type, face_cascades, eye_cascade, smile_cascade):
+    import time
+
+    st.info(
+        "🖥️ **Local mode detected** — using `cv2.VideoCapture` for high-quality, "
+        "low-latency webcam access."
+    )
+
+    FRAME_WINDOW = st.empty()
+    status_text  = st.empty()
+
+    col1, col2 = st.columns(2)
+    run  = col1.button("▶ Start Webcam", key="local_start")
+    stop = col2.button("⏹ Stop",         key="local_stop")
+
+    # Initialise session state
+    if "webcam_running" not in st.session_state:
+        st.session_state.webcam_running = False
+    if "webcam_det_type" not in st.session_state:
+        st.session_state.webcam_det_type = None
+
+    # If the detection type changed while the webcam was running,
+    # stop it cleanly so the camera has time to release before we reopen.
+    if (
+        st.session_state.webcam_running
+        and st.session_state.webcam_det_type != detection_type
+    ):
+        st.session_state.webcam_running  = False
+        st.session_state.webcam_det_type = None
+        time.sleep(0.4)   # give Windows time to release the device
+
+    if run:
+        st.session_state.webcam_running  = True
+        st.session_state.webcam_det_type = detection_type
+    if stop:
+        st.session_state.webcam_running  = False
+        st.session_state.webcam_det_type = None
+
+    if st.session_state.webcam_running:
+        # Retry opening the camera a few times to handle the brief
+        # release delay on Windows when switching detection types.
+        cap = None
+        for attempt in range(4):
+            cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+            if cap.isOpened():
+                break
+            cap.release()
+            time.sleep(0.3)
+
+        if cap is None or not cap.isOpened():
+            st.error("❌ Could not open webcam. Make sure it is connected and not in use.")
+            st.session_state.webcam_running  = False
+            st.session_state.webcam_det_type = None
+            return
+
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        cap.set(cv2.CAP_PROP_FPS, 30)
+
+        try:
+            while st.session_state.webcam_running:
+                ret, frame = cap.read()
+                if not ret:
+                    status_text.warning("⚠️ Frame capture failed — retrying…")
+                    continue
+
+                frame = _apply_detection(
+                    frame, detection_type, face_cascades, eye_cascade, smile_cascade
+                )
+                FRAME_WINDOW.image(
+                    cv2.cvtColor(frame, cv2.COLOR_BGR2RGB),
+                    channels="RGB",
+                    use_container_width=True,
+                )
+        finally:
+            cap.release()
+            status_text.info("📷 Webcam stopped.")
+
+
+
+# ---------------------------------------------------------------------------
+# Video upload mode — process uploaded video frame-by-frame
+# ---------------------------------------------------------------------------
+def _run_video_upload(detection_type, face_cascades, eye_cascade, smile_cascade):
+    st.info("📹 Upload a video file. Detection will be applied to every frame.")
+
+    uploaded_video = st.file_uploader(
+        "Upload a video", type=["mp4", "avi", "mov", "mkv"]
+    )
+
+    if uploaded_video is None:
+        return
+
+    # Write to a temp file so cv2 can open it
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+        tmp.write(uploaded_video.read())
+        tmp_path = tmp.name
+
+    cap = cv2.VideoCapture(tmp_path)
+    if not cap.isOpened():
+        st.error("❌ Could not open the uploaded video.")
+        os.unlink(tmp_path)
+        return
+
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps          = cap.get(cv2.CAP_PROP_FPS) or 25
+
+    # Slider: let user pick a frame to preview, or process all
+    col1, col2 = st.columns([3, 1])
+    frame_idx = col1.slider(
+        "Preview frame", min_value=0, max_value=max(total_frames - 1, 0), value=0
+    )
+    process_all = col2.checkbox("Process full video", value=False)
+
+    # --- Single frame preview ---
+    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+    ret, frame = cap.read()
+    if ret:
+        preview = _apply_detection(
+            frame.copy(), detection_type, face_cascades, eye_cascade, smile_cascade
+        )
+        st.image(
+            cv2.cvtColor(preview, cv2.COLOR_BGR2RGB),
+            caption=f"Frame {frame_idx} / {total_frames - 1}",
+            use_container_width=True,
+        )
+
+    # --- Full video processing ---
+    if process_all:
+        st.warning(
+            "⚠️ Processing the full video may take a while depending on its length. "
+            "The processed video will be available for download when done."
+        )
+        if st.button("🚀 Process & Download Video"):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            w   = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h   = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+            out_path = tmp_path.replace(".mp4", "_out.mp4")
+            fourcc   = cv2.VideoWriter_fourcc(*"mp4v")
+            writer   = cv2.VideoWriter(out_path, fourcc, fps, (w, h))
+
+            progress = st.progress(0)
+            frame_no = 0
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                frame = _apply_detection(
+                    frame, detection_type, face_cascades, eye_cascade, smile_cascade
+                )
+                writer.write(frame)
+                frame_no += 1
+                if total_frames > 0:
+                    progress.progress(min(frame_no / total_frames, 1.0))
+
+            writer.release()
+            progress.progress(1.0)
+            st.success("✅ Video processed!")
+
+            with open(out_path, "rb") as f:
+                st.download_button(
+                    "⬇️ Download Processed Video",
+                    data=f,
+                    file_name="detected_output.mp4",
+                    mime="video/mp4",
+                )
+            os.unlink(out_path)
+
+    cap.release()
+    os.unlink(tmp_path)
+
+
+# ---------------------------------------------------------------------------
 # Main Streamlit page
 # ---------------------------------------------------------------------------
 def opencv_detection_page():
@@ -294,64 +508,102 @@ def opencv_detection_page():
             smile_cascade = _load_cascade("smile")
 
     # ------------------------------------------------------------------
-    # Input mode
+    # Input mode — Webcam / Upload Video / Image
     # ------------------------------------------------------------------
-    mode = st.radio("Select Input Method", ("Webcam", "Image"), horizontal=True)
+    mode_options = ["Webcam", "Upload Video", "Image"]
+    mode = st.radio("Select Input Method", mode_options, horizontal=True)
 
     # ==================================================================
     # WEBCAM MODE
     # ==================================================================
     if mode == "Webcam":
-        st.info("🎥 Real-time webcam detection. Click **START** to begin streaming.")
+        import platform
+        with st.expander("🔍 Environment debug info", expanded=False):
+            st.write({
+                "IS_LOCAL":               IS_LOCAL,
+                "platform":               platform.system(),
+                "HOSTNAME":               os.environ.get("HOSTNAME", "(not set)"),
+                "IS_STREAMLIT_CLOUD":     os.environ.get("IS_STREAMLIT_CLOUD", "(not set)"),
+                "STREAMLIT_SHARING_MODE": os.environ.get("STREAMLIT_SHARING_MODE", "(not set)"),
+                "DISPLAY":                os.environ.get("DISPLAY", "(not set)"),
+            })
+            force_local = st.toggle(
+                "🖥️ Force local cv2 mode (use this if you're on your own machine but "
+                "auto-detection says cloud)",
+                value=IS_LOCAL,
+                key="force_local_webcam",
+            )
+            st.caption(
+                "When ON: uses `cv2.VideoCapture` directly — zero lag, no WebRTC.  "
+                "When OFF: uses WebRTC (needed for Streamlit Cloud)."
+            )
 
-        class VideoProcessor(VideoProcessorBase):
-            """WebRTC video processor — runs ensemble face detection per frame."""
+        use_local = force_local if "force_local_webcam" in st.session_state else IS_LOCAL
 
-            def __init__(self):
-                self._det_type      = detection_type
-                self._face_cascades = face_cascades
-                self._eye_cascade   = eye_cascade
-                self._smile_cascade = smile_cascade
+        if use_local:
+            # ---- Local: use cv2.VideoCapture (zero lag, full quality) ----
+            _run_local_webcam(detection_type, face_cascades, eye_cascade, smile_cascade)
 
-            def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
-                img = frame.to_ndarray(format="bgr24")
+        else:
+            # ---- Cloud: warn user, fall back to WebRTC ----
+            st.warning(
+                "⚠️ **You appear to be running on Streamlit Cloud.**\n\n"
+                "Streamlit Cloud has limited CPU resources, so the webcam stream "
+                "may lag or stutter. For the best experience, we strongly recommend "
+                "**running this app on your local machine** where `cv2.VideoCapture` "
+                "is used directly for high-quality, lag-free video.\n\n"
+                "The WebRTC stream below will still work, but performance may vary."
+            )
 
-                if self._det_type == "Real Time Face Count":
-                    img, _ = run_face_count(img, self._face_cascades)
-                elif self._det_type == "Stop Sign Detection":
-                    img = run_stop_sign_detection(img)
-                elif self._det_type == "Face Detection":
-                    img = run_face_detection(img, self._face_cascades)
-                else:  # Eye + Smile Detection
-                    img = run_eye_smile_detection(
-                        img, self._face_cascades, self._eye_cascade, self._smile_cascade
+            class VideoProcessor(VideoProcessorBase):
+                """WebRTC video processor — runs ensemble face detection per frame."""
+
+                def __init__(self):
+                    self._det_type      = detection_type
+                    self._face_cascades = face_cascades
+                    self._eye_cascade   = eye_cascade
+                    self._smile_cascade = smile_cascade
+
+                def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
+                    img = frame.to_ndarray(format="bgr24")
+                    img = _apply_detection(
+                        img,
+                        self._det_type,
+                        self._face_cascades,
+                        self._eye_cascade,
+                        self._smile_cascade,
                     )
+                    return av.VideoFrame.from_ndarray(img, format="bgr24")
 
-                return av.VideoFrame.from_ndarray(img, format="bgr24")
-
-        webrtc_streamer(
-            key="opencv-detection",
-            mode=WebRtcMode.SENDRECV,
-            video_processor_factory=VideoProcessor,
-            media_stream_constraints={
-                "video": {
-                    "width":     {"ideal": 1280, "min": 640},
-                    "height":    {"ideal": 720,  "min": 480},
-                    "frameRate": {"ideal": 30,   "min": 15},
+            webrtc_streamer(
+                key="opencv-detection",
+                mode=WebRtcMode.SENDRECV,
+                video_processor_factory=VideoProcessor,
+                media_stream_constraints={
+                    "video": {
+                        "width":     {"ideal": 1280, "min": 640},
+                        "height":    {"ideal": 720,  "min": 480},
+                        "frameRate": {"ideal": 30,   "min": 15},
+                    },
+                    "audio": False,
                 },
-                "audio": False,
-            },
-            rtc_configuration={
-                "iceServers": [
-                    {"urls": "stun:stun.l.google.com:19302"},
-                    {"urls": "stun:stun1.l.google.com:19302"},
-                    {"urls": "stun:stun2.l.google.com:19302"},
-                    {"urls": "stun:stun.stunprotocol.org:3478"},
-                ],
-                "iceCandidatePoolSize": 10,
-            },
-            async_processing=True,
-        )
+                rtc_configuration={
+                    "iceServers": [
+                        {"urls": "stun:stun.l.google.com:19302"},
+                        {"urls": "stun:stun1.l.google.com:19302"},
+                        {"urls": "stun:stun2.l.google.com:19302"},
+                        {"urls": "stun:stun.stunprotocol.org:3478"},
+                    ],
+                    "iceCandidatePoolSize": 10,
+                },
+                async_processing=True,
+            )
+
+    # ==================================================================
+    # VIDEO UPLOAD MODE
+    # ==================================================================
+    elif mode == "Upload Video":
+        _run_video_upload(detection_type, face_cascades, eye_cascade, smile_cascade)
 
     # ==================================================================
     # IMAGE MODE
