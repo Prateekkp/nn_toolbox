@@ -5,22 +5,33 @@ from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 import av
 import os
 import tempfile
+import time
+import platform
 
 # ---------------------------------------------------------------------------
 # Environment detection — are we running locally or on Streamlit Cloud?
 # ---------------------------------------------------------------------------
 def _is_local() -> bool:
     """
-    Returns True when the app is running on the user's local machine.
-    Streamlit Community Cloud sets the HOSTNAME env-var to a value that
-    contains 'streamlit' or sets IS_STREAMLIT_CLOUD.  We also check for
-    the absence of a display (headless servers) as a secondary signal.
+    Returns True when running on the user's local machine.
+
+    Detection strategy (any match → cloud):
+      1. IS_STREAMLIT_CLOUD env var is set  (Streamlit Community Cloud)
+      2. STREAMLIT_SHARING_MODE env var is set
+      3. HOSTNAME contains 'streamlit'  (Linux cloud runners)
+      4. No DISPLAY and not Windows  (headless Linux server)
+
+    On Windows locally none of the above will be true, so we default to local.
     """
+    if os.environ.get("IS_STREAMLIT_CLOUD"):
+        return False
+    if os.environ.get("STREAMLIT_SHARING_MODE"):
+        return False
     hostname = os.environ.get("HOSTNAME", "").lower()
     if "streamlit" in hostname:
         return False
-    # Streamlit Cloud sets this variable
-    if os.environ.get("IS_STREAMLIT_CLOUD") or os.environ.get("STREAMLIT_SHARING_MODE"):
+    # Headless Linux server (no display = no webcam)
+    if platform.system() != "Windows" and not os.environ.get("DISPLAY"):
         return False
     return True
 
@@ -104,19 +115,6 @@ def detect_faces_ensemble(
 ) -> list:
     """
     Run all provided cascades on *gray* and merge results with NMS.
-
-    Parameters
-    ----------
-    gray          : Grayscale, equalised image.
-    cascades      : List of loaded CascadeClassifier objects (Nones are skipped).
-    scale_factor  : Detection scale factor (lower = more detections, slower).
-    min_neighbors : Minimum neighbours required (higher = fewer false positives).
-    min_size      : Minimum face size in pixels.
-    nms_thresh    : IoU threshold for NMS deduplication.
-
-    Returns
-    -------
-    List of (x, y, w, h) tuples after NMS.
     """
     all_boxes = []
     for clf in cascades:
@@ -140,9 +138,8 @@ def detect_faces_ensemble(
 # ---------------------------------------------------------------------------
 def _preprocess(frame: np.ndarray, max_width: int = 640) -> tuple[np.ndarray, float]:
     """
-    Resize frame so its width ≤ max_width (keeps aspect ratio),
+    Resize frame so its width <= max_width (keeps aspect ratio),
     convert to grayscale, and equalise histogram.
-
     Returns (gray_eq, scale) where scale = original_width / resized_width.
     """
     h, w = frame.shape[:2]
@@ -164,7 +161,6 @@ def _preprocess(frame: np.ndarray, max_width: int = 640) -> tuple[np.ndarray, fl
 # ---------------------------------------------------------------------------
 def _draw_face_box(frame, x, y, w, h, label="Face", color=(0, 255, 0)):
     cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
-    # Background pill for text
     (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
     cv2.rectangle(frame, (x, y - th - 8), (x + tw + 6, y), color, -1)
     cv2.putText(frame, label, (x + 3, y - 4),
@@ -179,17 +175,15 @@ def _draw_count_overlay(frame, count: int):
 
 
 # ---------------------------------------------------------------------------
-# High-level detection functions (used by both Image and Webcam modes)
+# High-level detection functions
 # ---------------------------------------------------------------------------
 def run_face_detection(frame: np.ndarray, face_cascades: list) -> np.ndarray:
     """Detect faces and draw labelled bounding boxes."""
     gray_eq, scale = _preprocess(frame)
     faces = detect_faces_ensemble(gray_eq, face_cascades)
-
     for (x, y, w, h) in faces:
         sx, sy, sw, sh = (int(v * scale) for v in (x, y, w, h))
         _draw_face_box(frame, sx, sy, sw, sh, label="Face")
-
     return frame
 
 
@@ -197,12 +191,10 @@ def run_face_count(frame: np.ndarray, face_cascades: list) -> tuple[np.ndarray, 
     """Detect faces, draw boxes, and overlay the count."""
     gray_eq, scale = _preprocess(frame)
     faces = detect_faces_ensemble(gray_eq, face_cascades)
-
     for (x, y, w, h) in faces:
         sx, sy, sw, sh = (int(v * scale) for v in (x, y, w, h))
         _draw_face_box(frame, sx, sy, sw, sh, label=f"#{faces.index((x,y,w,h))+1}",
                        color=(0, 200, 255))
-
     _draw_count_overlay(frame, len(faces))
     return frame, len(faces)
 
@@ -221,7 +213,6 @@ def run_eye_smile_detection(
         sx, sy, sw, sh = (int(v * scale) for v in (x, y, w, h))
         cv2.rectangle(frame, (sx, sy), (sx + sw, sy + sh), (255, 100, 0), 2)
 
-        # Work on the original-resolution ROI for sub-detection accuracy
         roi_gray = cv2.cvtColor(frame[sy:sy + sh, sx:sx + sw], cv2.COLOR_BGR2GRAY)
         roi_gray = cv2.equalizeHist(roi_gray)
         roi_color = frame[sy:sy + sh, sx:sx + sw]
@@ -289,8 +280,6 @@ def _apply_detection(img, detection_type, face_cascades, eye_cascade, smile_casc
 # Local webcam mode — uses cv2.VideoCapture (no WebRTC, no lag)
 # ---------------------------------------------------------------------------
 def _run_local_webcam(detection_type, face_cascades, eye_cascade, smile_cascade):
-    import time
-
     st.info(
         "🖥️ **Local mode detected** — using `cv2.VideoCapture` for high-quality, "
         "low-latency webcam access."
@@ -365,7 +354,6 @@ def _run_local_webcam(detection_type, face_cascades, eye_cascade, smile_cascade)
         finally:
             cap.release()
             status_text.info("📷 Webcam stopped.")
-
 
 
 # ---------------------------------------------------------------------------
@@ -483,10 +471,9 @@ def opencv_detection_page():
     )
 
     # ------------------------------------------------------------------
-    # Load cascades once (cached via st.cache_resource would be ideal,
-    # but cascade objects aren't pickle-able; load per session instead)
+    # Load cascades
     # ------------------------------------------------------------------
-    face_cascades = []   # ensemble list
+    face_cascades = []
     eye_cascade   = None
     smile_cascade = None
 
@@ -496,7 +483,6 @@ def opencv_detection_page():
             _load_cascade("alt"),
             _load_cascade("alt_tree"),
         ]
-        # Filter out any that failed to load
         face_cascades = [c for c in face_cascades if c is not None]
 
         if not face_cascades:
@@ -510,14 +496,17 @@ def opencv_detection_page():
     # ------------------------------------------------------------------
     # Input mode — Webcam / Upload Video / Image
     # ------------------------------------------------------------------
-    mode_options = ["Webcam", "Upload Video", "Image"]
-    mode = st.radio("Select Input Method", mode_options, horizontal=True)
+    mode = st.radio(
+        "Select Input Method",
+        ("Webcam", "Upload Video", "Image"),
+        horizontal=True,
+    )
 
     # ==================================================================
     # WEBCAM MODE
     # ==================================================================
     if mode == "Webcam":
-        import platform
+
         with st.expander("🔍 Environment debug info", expanded=False):
             st.write({
                 "IS_LOCAL":               IS_LOCAL,
@@ -538,7 +527,7 @@ def opencv_detection_page():
                 "When OFF: uses WebRTC (needed for Streamlit Cloud)."
             )
 
-        use_local = force_local if "force_local_webcam" in st.session_state else IS_LOCAL
+        use_local = st.session_state.get("force_local_webcam", IS_LOCAL)
 
         if use_local:
             # ---- Local: use cv2.VideoCapture (zero lag, full quality) ----
