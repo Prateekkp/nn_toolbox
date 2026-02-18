@@ -329,16 +329,20 @@ def opencv_detection_page():
 
                 return av.VideoFrame.from_ndarray(img, format="bgr24")
 
-        # Use detection_type in the key so switching detection type
-        # unmounts the old streamer and stops the camera immediately.
-        _streamer_key = f"opencv-detection-{detection_type.lower().replace(' ', '-')}"
         webrtc_streamer(
-            key=_streamer_key,
+            key="opencv-detection",
             mode=WebRtcMode.SENDRECV,
             video_processor_factory=VideoProcessor,
             media_stream_constraints={
-                "video": {"width": {"ideal": 640}, "height": {"ideal": 480}},
+                "video": {
+                    "width":     {"ideal": 1280, "min": 640},
+                    "height":    {"ideal": 720,  "min": 480},
+                    "frameRate": {"ideal": 30,   "min": 15},
+                },
                 "audio": False,
+            },
+            rtc_configuration={
+                "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
             },
             async_processing=True,
         )
