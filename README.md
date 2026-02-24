@@ -5,33 +5,97 @@
 ![License](https://img.shields.io/badge/License-MIT-green)
 [![Live App](https://img.shields.io/badge/Live%20App-Streamlit-0aa5a8)](https://nn-tool-box.streamlit.app/)
 
-An interactive Streamlit app for learning core neural network concepts and computer vision techniques. The app includes hands-on modules for perceptron, forward propagation, backward propagation, multi-layer perceptron (MLP), and OpenCV-based object detection with visualizations and dataset support.
+An interactive **Streamlit-based learning toolbox** for understanding core **Neural Network concepts** and **Computer Vision techniques** through hands-on experimentation and visualizations.
 
-<a href="https://nn-tool-box.streamlit.app/" target="_blank">
-   Click Here to Open the App
-</a>
+👉 **Live App**: https://nn-tool-box.streamlit.app/  
+> Since it's freely deployed, the app may need a few seconds to wake up.
 
-<span style="color: #6c757d;">Since it's freely deployed, you may need to wake up the app.</span>
+---
 
 ## Highlights
 
 - Interactive, educational UI built with Streamlit
 - Perceptron training with logic gates or custom CSV
 - Forward and backward propagation walkthroughs
-- MLP classifier with binary and multiclass support
-- OpenCV-based detection (Face, Eye, Smile, Stop Sign, Face Count)
-- Real-time webcam detection and image upload support
-- Built-in sample datasets (AND, IRIS) and detection samples
+- Multi-Layer Perceptron (MLP) with binary & multiclass support
+- OpenCV-based object detection:
+  - Face
+  - Eye + Smile
+  - Stop Sign
+  - Face Count
+- Real-time webcam detection & image upload
+- Built-in sample datasets (AND, IRIS)
+- **CLI-based launcher (`nntoolbox`) for local use**
+
+---
+
+## Installation (Recommended)
+
+This project provides a **clean installer** that hides pip noise and ensures a smooth setup.
+
+### 1️⃣ Clone the repository
+
+```bash
+git clone https://github.com/Prateekkp/nn_toolbox.git
+cd nn_toolbox
+```
+
+### 2️⃣ Create & activate virtual environment
+
+```powershell
+python -m venv .venv
+. .venv\Scripts\activate
+```
+
+### 3️⃣ Run the installer
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\install_nntoolbox.ps1
+```
+
+You’ll see a clean progress bar and a success message.
+
+### 4️⃣ Launch the app
+
+```bash
+nntoolbox
+```
+
+The Streamlit app will open automatically in your browser.
+
+---
+
+## Developer Installation (Editable Mode)
+
+If you are developing or modifying the project:
+
+```bash
+pip install -e . -q
+nntoolbox
+```
+
+> This installs the package in editable mode inside the active virtual environment.
+
+---
 
 ## Project Structure
 
 ```
 .
-├─ app.py
+├─ nntoolbox/
+│  ├─ __init__.py
+│  └─ cli.py              # CLI launcher (nntoolbox)
+│
+├─ streamlit_app.py       # Pure Streamlit app (no CLI logic)
+├─ install_nntoolbox.ps1  # Clean installer (recommended)
+├─ setup.py
 ├─ requirements.txt
+│
 ├─ data/
 │  ├─ AND.csv
 │  └─ IRIS.csv
+│
 └─ src/
    ├─ assets/
    │  └─ documnets/
@@ -39,12 +103,15 @@ An interactive Streamlit app for learning core neural network concepts and compu
    │     ├─ forward_propagation.py
    │     ├─ mnp.py
    │     └─ perceptron.py
+   │
    ├─ core/
    │  └─ perceptron.py
+   │
    ├─ open_cv/
    │  ├─ cascades/
    │  ├─ sample/
    │  └─ open_cv_detection.py
+   │
    └─ ui/
       ├─ backward_propagation.py
       ├─ forward_propagation.py
@@ -52,11 +119,13 @@ An interactive Streamlit app for learning core neural network concepts and compu
       └─ perceptron_ui.py
 ```
 
+---
+
 ## Architecture Overview
 
 ```mermaid
 flowchart TB
-    A[app.py] --> B[Streamlit UI Pages]
+    A[streamlit_app.py] --> B[Streamlit UI Pages]
     B --> C[Perceptron UI]
     B --> D[Forward Prop UI]
     B --> E[Backward Prop UI]
@@ -72,6 +141,8 @@ flowchart TB
     G --> N[Webcam OR Image Upload]
 ```
 
+---
+
 ## Module Flow
 
 ```mermaid
@@ -84,44 +155,52 @@ flowchart LR
     AC --> AD[Metrics / Visualization]
 ```
 
-## Requirements
+---
 
-- Python 3.9+
-- Packages listed in [requirements.txt](requirements.txt)
+## Usage Guide
 
-## Quick Start
+* Use the sidebar to choose modules or documentation pages
+* **Perceptron / MLP**
 
-1. Create and activate a virtual environment
-2. Install dependencies
-3. Run the Streamlit app
+  * Select logic gates or upload CSV files
+  * Tune learning parameters
+* **OpenCV Detection**
 
-```bash
-python -m venv .venv
-. .venv/Scripts/activate
-pip install -r requirements.txt
-streamlit run app.py
-```
+  * Choose detection type
+  * Use webcam or upload images
+* Visualize training behavior and results interactively
 
-## Usage
-
-- Use the sidebar to choose a module or open documentation pages.
-- For Perceptron and MLP modules, select a logic gate or upload a CSV file.
-- For OpenCV Detection, choose detection type (Face, Eye+Smile, Stop Sign, Face Count).
-- Select input method: webcam for real-time detection or upload/sample images.
-- Configure parameters and run training/detection to visualize results.
+---
 
 ## Data Input Rules
 
-- **Perceptron**: Expects exactly two binary feature columns and a binary target.
-- **MLP**: Supports binary or multiclass targets and handles numeric and categorical features.
-- **OpenCV Detection**: Accepts webcam feed or image files (JPG, JPEG, PNG). Uses Haar Cascade classifiers.
-- Large datasets are rejected to keep performance stable in the UI.
+* **Perceptron**
+
+  * Exactly 2 binary feature columns
+  * Binary target
+* **MLP**
+
+  * Binary or multiclass targets
+  * Supports numeric & categorical features
+* **OpenCV Detection**
+
+  * Webcam or image files (JPG, JPEG, PNG)
+  * Haar Cascade-based detection
+* Large datasets are restricted to maintain UI performance
+
+---
 
 ## Notes
 
-- This project is educational and focuses on explainability over performance.
-- The MLP module includes basic preprocessing (standardization and one-hot encoding).
+* This project prioritizes **learning & explainability** over raw performance
+* MLP module includes:
+
+  * Standardization
+  * One-hot encoding
+* Designed for **students, demos, and concept clarity**
+
+---
 
 ## License
 
-MIT License - free to use, modify, and share for learning and beyond.
+MIT License — free to use, modify, and share for learning and beyond.
