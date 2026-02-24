@@ -254,4 +254,3 @@ def perceptron_page():
             )
             prediction = activation(weighted_sum)
             st.success(f"Predicted Output: {prediction}")
-
