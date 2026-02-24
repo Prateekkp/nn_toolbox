@@ -1,9 +1,7 @@
-pandas
+streamlit
 numpy
-matplotlib
-streamlit>=1.30.0
-scikit-learn
+pandas
+opencv-python
 plotly
-altair<5
-opencv-python-headless
-streamlit_webrtc
+streamlit-webrtc
+av

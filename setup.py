@@ -12,6 +12,9 @@ setup(
         "numpy",
         "pandas",
         "opencv-python",
+        "plotly",
+        "streamlit-webrtc",
+        "av",
     ],
     entry_points={
         "console_scripts": [
