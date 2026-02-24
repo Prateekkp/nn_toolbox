@@ -1,15 +1,40 @@
-import cv2
-import streamlit as st
-import numpy as np
-from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
-import av
+"""
+open_cv_detection.py
+--------------------
+Streamlit UI for the OpenCV Detection page.
+
+All pure CV logic lives in open_cv_core.py.
+This file handles:
+  - Environment detection (local vs. Streamlit Cloud)
+  - Cascade loading (with Streamlit warnings)
+  - Webcam mode   (_run_local_webcam / WebRTC)
+  - Video upload  (_run_video_upload)
+  - Image mode    (upload / sample)
+  - Main page     (opencv_detection_page)
+"""
+
 import os
+import platform
 import tempfile
 import time
-import platform
+
+import av
+import cv2
+import numpy as np
+import streamlit as st
+from streamlit_webrtc import VideoProcessorBase, WebRtcMode, webrtc_streamer
+
+from src.open_cv.open_cv_core import (
+    CASCADE_PATHS,
+    run_eye_smile_detection,
+    run_face_count,
+    run_face_detection,
+    run_stop_sign_detection,
+)
+
 
 # ---------------------------------------------------------------------------
-# Environment detection — are we running locally or on Streamlit Cloud?
+# Environment detection — local vs. Streamlit Cloud
 # ---------------------------------------------------------------------------
 def _is_local() -> bool:
     """
@@ -19,9 +44,7 @@ def _is_local() -> bool:
       1. IS_STREAMLIT_CLOUD env var is set  (Streamlit Community Cloud)
       2. STREAMLIT_SHARING_MODE env var is set
       3. HOSTNAME contains 'streamlit'  (Linux cloud runners)
-      4. No DISPLAY and not Windows  (headless Linux server)
-
-    On Windows locally none of the above will be true, so we default to local.
+      4. No DISPLAY and not Windows     (headless Linux server)
     """
     if os.environ.get("IS_STREAMLIT_CLOUD"):
         return False
@@ -30,7 +53,6 @@ def _is_local() -> bool:
     hostname = os.environ.get("HOSTNAME", "").lower()
     if "streamlit" in hostname:
         return False
-    # Headless Linux server (no display = no webcam)
     if platform.system() != "Windows" and not os.environ.get("DISPLAY"):
         return False
     return True
@@ -40,22 +62,11 @@ IS_LOCAL = _is_local()
 
 
 # ---------------------------------------------------------------------------
-# Cascade paths
+# Cascade loader (Streamlit warnings live here, not in core)
 # ---------------------------------------------------------------------------
-_CASCADE_DIR = "src/open_cv/cascades"
-
-_CASCADE_PATHS = {
-    "default":   os.path.join(_CASCADE_DIR, "haarcascade_frontalface_default.xml"),
-    "alt":       os.path.join(_CASCADE_DIR, "haarcascade_frontalface_alt.xml"),
-    "alt_tree":  os.path.join(_CASCADE_DIR, "haarcascade_frontalface_alt_tree.xml"),
-    "eye":       os.path.join(_CASCADE_DIR, "haarcascade_eye.xml"),
-    "smile":     os.path.join(_CASCADE_DIR, "haarcascade_smile.xml"),
-}
-
-
 def _load_cascade(key: str) -> cv2.CascadeClassifier | None:
     """Load a Haar cascade by key; return None and warn if missing/invalid."""
-    path = _CASCADE_PATHS.get(key, "")
+    path = CASCADE_PATHS.get(key, "")
     if not os.path.exists(path):
         st.warning(f"⚠️ Cascade not found: {path}")
         return None
@@ -67,202 +78,7 @@ def _load_cascade(key: str) -> cv2.CascadeClassifier | None:
 
 
 # ---------------------------------------------------------------------------
-# NMS helper
-# ---------------------------------------------------------------------------
-def _nms_boxes(boxes, overlap_thresh: float = 0.3):
-    """
-    Non-Maximum Suppression over a list of (x, y, w, h) boxes.
-    Returns filtered list of (x, y, w, h).
-    """
-    if len(boxes) == 0:
-        return []
-
-    boxes = np.array(boxes, dtype=np.float32)
-    x1 = boxes[:, 0]
-    y1 = boxes[:, 1]
-    x2 = boxes[:, 0] + boxes[:, 2]
-    y2 = boxes[:, 1] + boxes[:, 3]
-    areas = (x2 - x1) * (y2 - y1)
-
-    order = areas.argsort()[::-1]
-    keep = []
-
-    while order.size > 0:
-        i = order[0]
-        keep.append(i)
-        xx1 = np.maximum(x1[i], x1[order[1:]])
-        yy1 = np.maximum(y1[i], y1[order[1:]])
-        xx2 = np.minimum(x2[i], x2[order[1:]])
-        yy2 = np.minimum(y2[i], y2[order[1:]])
-
-        inter = np.maximum(0, xx2 - xx1) * np.maximum(0, yy2 - yy1)
-        iou = inter / (areas[i] + areas[order[1:]] - inter + 1e-6)
-        order = order[np.where(iou <= overlap_thresh)[0] + 1]
-
-    return [tuple(map(int, boxes[k])) for k in keep]
-
-
-# ---------------------------------------------------------------------------
-# Multi-cascade face detection (ensemble of 3 cascades + NMS)
-# ---------------------------------------------------------------------------
-def detect_faces_ensemble(
-    gray: np.ndarray,
-    cascades: list,
-    scale_factor: float = 1.1,
-    min_neighbors: int = 4,
-    min_size: tuple = (30, 30),
-    nms_thresh: float = 0.3,
-) -> list:
-    """
-    Run all provided cascades on *gray* and merge results with NMS.
-    """
-    all_boxes = []
-    for clf in cascades:
-        if clf is None:
-            continue
-        detections = clf.detectMultiScale(
-            gray,
-            scaleFactor=scale_factor,
-            minNeighbors=min_neighbors,
-            minSize=min_size,
-            flags=cv2.CASCADE_SCALE_IMAGE,
-        )
-        if len(detections) > 0:
-            all_boxes.extend(detections.tolist())
-
-    return _nms_boxes(all_boxes, overlap_thresh=nms_thresh)
-
-
-# ---------------------------------------------------------------------------
-# Pre-process frame for faster, more robust detection
-# ---------------------------------------------------------------------------
-def _preprocess(frame: np.ndarray, max_width: int = 640) -> tuple[np.ndarray, float]:
-    """
-    Resize frame so its width <= max_width (keeps aspect ratio),
-    convert to grayscale, and equalise histogram.
-    Returns (gray_eq, scale) where scale = original_width / resized_width.
-    """
-    h, w = frame.shape[:2]
-    if w > max_width:
-        scale = w / max_width
-        new_w, new_h = max_width, int(h / scale)
-        small = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
-    else:
-        scale = 1.0
-        small = frame
-
-    gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-    gray_eq = cv2.equalizeHist(gray)
-    return gray_eq, scale
-
-
-# ---------------------------------------------------------------------------
-# Drawing helpers
-# ---------------------------------------------------------------------------
-def _draw_face_box(frame, x, y, w, h, label="Face", color=(0, 255, 0)):
-    cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
-    (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
-    cv2.rectangle(frame, (x, y - th - 8), (x + tw + 6, y), color, -1)
-    cv2.putText(frame, label, (x + 3, y - 4),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 1, cv2.LINE_AA)
-
-
-def _draw_count_overlay(frame, count: int):
-    label = f"Faces Detected: {count}"
-    cv2.rectangle(frame, (10, 8), (10 + len(label) * 13, 42), (0, 0, 0), -1)
-    cv2.putText(frame, label, (14, 34),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 80), 2, cv2.LINE_AA)
-
-
-# ---------------------------------------------------------------------------
-# High-level detection functions
-# ---------------------------------------------------------------------------
-def run_face_detection(frame: np.ndarray, face_cascades: list) -> np.ndarray:
-    """Detect faces and draw labelled bounding boxes."""
-    gray_eq, scale = _preprocess(frame)
-    faces = detect_faces_ensemble(gray_eq, face_cascades)
-    for (x, y, w, h) in faces:
-        sx, sy, sw, sh = (int(v * scale) for v in (x, y, w, h))
-        _draw_face_box(frame, sx, sy, sw, sh, label="Face")
-    return frame
-
-
-def run_face_count(frame: np.ndarray, face_cascades: list) -> tuple[np.ndarray, int]:
-    """Detect faces, draw boxes, and overlay the count."""
-    gray_eq, scale = _preprocess(frame)
-    faces = detect_faces_ensemble(gray_eq, face_cascades)
-    for (x, y, w, h) in faces:
-        sx, sy, sw, sh = (int(v * scale) for v in (x, y, w, h))
-        _draw_face_box(frame, sx, sy, sw, sh, label=f"#{faces.index((x,y,w,h))+1}",
-                       color=(0, 200, 255))
-    _draw_count_overlay(frame, len(faces))
-    return frame, len(faces)
-
-
-def run_eye_smile_detection(
-    frame: np.ndarray,
-    face_cascades: list,
-    eye_cascade,
-    smile_cascade,
-) -> np.ndarray:
-    """Detect faces, then eyes and smiles within each face ROI."""
-    gray_eq, scale = _preprocess(frame)
-    faces = detect_faces_ensemble(gray_eq, face_cascades)
-
-    for (x, y, w, h) in faces:
-        sx, sy, sw, sh = (int(v * scale) for v in (x, y, w, h))
-        cv2.rectangle(frame, (sx, sy), (sx + sw, sy + sh), (255, 100, 0), 2)
-
-        roi_gray = cv2.cvtColor(frame[sy:sy + sh, sx:sx + sw], cv2.COLOR_BGR2GRAY)
-        roi_gray = cv2.equalizeHist(roi_gray)
-        roi_color = frame[sy:sy + sh, sx:sx + sw]
-
-        if eye_cascade is not None:
-            eyes = eye_cascade.detectMultiScale(
-                roi_gray, scaleFactor=1.1, minNeighbors=8, minSize=(15, 15)
-            )
-            for (ex, ey, ew, eh) in eyes:
-                cv2.rectangle(roi_color, (ex, ey), (ex + ew, ey + eh), (0, 255, 0), 2)
-
-        if smile_cascade is not None:
-            smiles = smile_cascade.detectMultiScale(
-                roi_gray, scaleFactor=1.6, minNeighbors=18, minSize=(25, 25)
-            )
-            for (smx, smy, smw, smh) in smiles:
-                cv2.rectangle(roi_color, (smx, smy), (smx + smw, smy + smh), (0, 0, 255), 2)
-                cv2.putText(roi_color, "Smile", (smx, smy - 6),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 255), 1, cv2.LINE_AA)
-
-    return frame
-
-
-def run_stop_sign_detection(image: np.ndarray) -> np.ndarray:
-    """Detect stop signs via HSV colour + contour shape analysis."""
-    image = cv2.resize(image, (640, 480))
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-
-    lower_red1, upper_red1 = np.array([0, 80, 50]),   np.array([10, 255, 255])
-    lower_red2, upper_red2 = np.array([170, 80, 50]), np.array([180, 255, 255])
-
-    mask = cv2.inRange(hsv, lower_red1, upper_red1) | cv2.inRange(hsv, lower_red2, upper_red2)
-    kernel = np.ones((5, 5), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    for cnt in contours:
-        area = cv2.contourArea(cnt)
-        if area > 1500:
-            x, y, w, h = cv2.boundingRect(cnt)
-            if 0.75 < (w / float(h)) < 1.35:
-                cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 3)
-                cv2.putText(image, "STOP SIGN", (x, y - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2, cv2.LINE_AA)
-    return image
-
-
-# ---------------------------------------------------------------------------
-# Helper: apply detection to a single frame
+# Helper: dispatch detection to the correct function
 # ---------------------------------------------------------------------------
 def _apply_detection(img, detection_type, face_cascades, eye_cascade, smile_cascade):
     if detection_type == "Real Time Face Count":
@@ -277,7 +93,7 @@ def _apply_detection(img, detection_type, face_cascades, eye_cascade, smile_casc
 
 
 # ---------------------------------------------------------------------------
-# Local webcam mode — uses cv2.VideoCapture (no WebRTC, no lag)
+# Local webcam mode — cv2.VideoCapture (no WebRTC, no lag)
 # ---------------------------------------------------------------------------
 def _run_local_webcam(detection_type, face_cascades, eye_cascade, smile_cascade):
     st.info(
@@ -292,21 +108,19 @@ def _run_local_webcam(detection_type, face_cascades, eye_cascade, smile_cascade)
     run  = col1.button("▶ Start Webcam", key="local_start")
     stop = col2.button("⏹ Stop",         key="local_stop")
 
-    # Initialise session state
     if "webcam_running" not in st.session_state:
         st.session_state.webcam_running = False
     if "webcam_det_type" not in st.session_state:
         st.session_state.webcam_det_type = None
 
-    # If the detection type changed while the webcam was running,
-    # stop it cleanly so the camera has time to release before we reopen.
+    # If the detection type changed while the webcam was running, stop cleanly
     if (
         st.session_state.webcam_running
         and st.session_state.webcam_det_type != detection_type
     ):
         st.session_state.webcam_running  = False
         st.session_state.webcam_det_type = None
-        time.sleep(0.4)   # give Windows time to release the device
+        time.sleep(0.4)  # give Windows time to release the device
 
     if run:
         st.session_state.webcam_running  = True
@@ -316,10 +130,9 @@ def _run_local_webcam(detection_type, face_cascades, eye_cascade, smile_cascade)
         st.session_state.webcam_det_type = None
 
     if st.session_state.webcam_running:
-        # Retry opening the camera a few times to handle the brief
-        # release delay on Windows when switching detection types.
+        # Retry opening the camera a few times (handles brief release delay on Windows)
         cap = None
-        for attempt in range(4):
+        for _ in range(4):
             cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
             if cap.isOpened():
                 break
@@ -349,7 +162,7 @@ def _run_local_webcam(detection_type, face_cascades, eye_cascade, smile_cascade)
                 FRAME_WINDOW.image(
                     cv2.cvtColor(frame, cv2.COLOR_BGR2RGB),
                     channels="RGB",
-                    use_container_width=True,
+                    width='stretch',
                 )
         finally:
             cap.release()
@@ -369,7 +182,6 @@ def _run_video_upload(detection_type, face_cascades, eye_cascade, smile_cascade)
     if uploaded_video is None:
         return
 
-    # Write to a temp file so cv2 can open it
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
         tmp.write(uploaded_video.read())
         tmp_path = tmp.name
@@ -383,9 +195,8 @@ def _run_video_upload(detection_type, face_cascades, eye_cascade, smile_cascade)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     fps          = cap.get(cv2.CAP_PROP_FPS) or 25
 
-    # Slider: let user pick a frame to preview, or process all
     col1, col2 = st.columns([3, 1])
-    frame_idx = col1.slider(
+    frame_idx   = col1.slider(
         "Preview frame", min_value=0, max_value=max(total_frames - 1, 0), value=0
     )
     process_all = col2.checkbox("Process full video", value=False)
@@ -400,7 +211,7 @@ def _run_video_upload(detection_type, face_cascades, eye_cascade, smile_cascade)
         st.image(
             cv2.cvtColor(preview, cv2.COLOR_BGR2RGB),
             caption=f"Frame {frame_idx} / {total_frames - 1}",
-            use_container_width=True,
+            width='stretch',
         )
 
     # --- Full video processing ---
@@ -411,8 +222,8 @@ def _run_video_upload(detection_type, face_cascades, eye_cascade, smile_cascade)
         )
         if st.button("🚀 Process & Download Video"):
             cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            w   = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            h   = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
             out_path = tmp_path.replace(".mp4", "_out.mp4")
             fourcc   = cv2.VideoWriter_fourcc(*"mp4v")
@@ -462,7 +273,7 @@ def opencv_detection_page():
     )
 
     # ------------------------------------------------------------------
-    # Detection type
+    # Detection type selector
     # ------------------------------------------------------------------
     detection_type = st.radio(
         "Select Detection Type",
@@ -473,9 +284,9 @@ def opencv_detection_page():
     # ------------------------------------------------------------------
     # Load cascades
     # ------------------------------------------------------------------
-    face_cascades = []
-    eye_cascade   = None
-    smile_cascade = None
+    face_cascades: list = []
+    eye_cascade         = None
+    smile_cascade       = None
 
     if detection_type != "Stop Sign Detection":
         face_cascades = [
@@ -494,7 +305,7 @@ def opencv_detection_page():
             smile_cascade = _load_cascade("smile")
 
     # ------------------------------------------------------------------
-    # Input mode — Webcam / Upload Video / Image
+    # Input mode selector
     # ------------------------------------------------------------------
     mode = st.radio(
         "Select Input Method",
@@ -530,11 +341,9 @@ def opencv_detection_page():
         use_local = st.session_state.get("force_local_webcam", IS_LOCAL)
 
         if use_local:
-            # ---- Local: use cv2.VideoCapture (zero lag, full quality) ----
             _run_local_webcam(detection_type, face_cascades, eye_cascade, smile_cascade)
 
         else:
-            # ---- Cloud: warn user, fall back to WebRTC ----
             st.warning(
                 "⚠️ **You appear to be running on Streamlit Cloud.**\n\n"
                 "Streamlit Cloud has limited CPU resources, so the webcam stream "
@@ -637,17 +446,23 @@ def opencv_detection_page():
 
             elif detection_type == "Stop Sign Detection":
                 result = run_stop_sign_detection(image)
-                st.image(cv2.cvtColor(result, cv2.COLOR_BGR2RGB),
-                         caption="Stop Sign Detection", channels="RGB")
+                st.image(
+                    cv2.cvtColor(result, cv2.COLOR_BGR2RGB),
+                    caption="Stop Sign Detection", channels="RGB",
+                )
 
             elif detection_type == "Face Detection":
                 result = run_face_detection(image, face_cascades)
-                st.image(cv2.cvtColor(result, cv2.COLOR_BGR2RGB),
-                         caption="Face Detection", channels="RGB")
+                st.image(
+                    cv2.cvtColor(result, cv2.COLOR_BGR2RGB),
+                    caption="Face Detection", channels="RGB",
+                )
 
             else:  # Eye + Smile Detection
                 result = run_eye_smile_detection(
                     image, face_cascades, eye_cascade, smile_cascade
                 )
-                st.image(cv2.cvtColor(result, cv2.COLOR_BGR2RGB),
-                         caption="Eye + Smile Detection", channels="RGB")
+                st.image(
+                    cv2.cvtColor(result, cv2.COLOR_BGR2RGB),
+                    caption="Eye + Smile Detection", channels="RGB",
+                )
