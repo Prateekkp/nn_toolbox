@@ -1,7 +1,0 @@
-streamlit
-numpy
-pandas
-opencv-python
-plotly
-streamlit-webrtc
-av
