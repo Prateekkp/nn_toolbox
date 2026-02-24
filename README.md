@@ -7,7 +7,7 @@
 
 An interactive **Streamlit-based learning toolbox** for understanding core **Neural Network concepts** and **Computer Vision techniques** through hands-on experimentation and visualizations.
 
-👉 **Live App**: https://nn-tool-box.streamlit.app/  
+**Live App**: https://nn-tool-box.streamlit.app/
 > Since it's freely deployed, the app may need a few seconds to wake up.
 
 ---
@@ -24,14 +24,11 @@ An interactive **Streamlit-based learning toolbox** for understanding core **Neu
   - Stop Sign
   - Face Count
 - Real-time webcam detection & image upload
-- Built-in sample datasets (AND, IRIS)
-- **CLI-based launcher (`nntoolbox`) for local use**
+- Built-in sample dataset (IRIS)
 
 ---
 
-## Installation (Recommended)
-
-This project provides a **clean installer** that hides pip noise and ensures a smooth setup.
+## Getting Started
 
 ### 1️⃣ Clone the repository
 
@@ -40,42 +37,28 @@ git clone https://github.com/Prateekkp/nn_toolbox.git
 cd nn_toolbox
 ```
 
-### 2️⃣ Create & activate virtual environment
+### 2️⃣ Create & activate a virtual environment
 
 ```powershell
 python -m venv .venv
-. .venv\Scripts\activate
 ```
-
-### 3️⃣ Run the installer
-
 ```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\install_nntoolbox.ps1
+.venv\Scripts\activate
 ```
 
-You’ll see a clean progress bar and a success message.
-
-### 4️⃣ Launch the app
+### 3️⃣ Install dependencies
 
 ```bash
-nntoolbox
+pip install -r requirements.txt
 ```
 
-The Streamlit app will open automatically in your browser.
-
----
-
-## Developer Installation (Editable Mode)
-
-If you are developing or modifying the project:
+### 4️⃣ Run the app
 
 ```bash
-pip install -e . -q
-nntoolbox
+streamlit run app.py
 ```
 
-> This installs the package in editable mode inside the active virtual environment.
+The app will open automatically at `http://localhost:8501`.
 
 ---
 
@@ -83,40 +66,34 @@ nntoolbox
 
 ```
 .
-├─ nntoolbox/
-│  ├─ __init__.py
-│  └─ cli.py              # CLI launcher (nntoolbox)
+├── app.py                    # Main Streamlit entry point
+├── requirements.txt
 │
-├─ streamlit_app.py       # Pure Streamlit app (no CLI logic)
-├─ install_nntoolbox.ps1  # Clean installer (recommended)
-├─ setup.py
-├─ requirements.txt
+├── data/
+│   └── IRIS.csv              # Sample dataset
 │
-├─ data/
-│  ├─ AND.csv
-│  └─ IRIS.csv
-│
-└─ src/
-   ├─ assets/
-   │  └─ documnets/
-   │     ├─ back_propagation.py
-   │     ├─ forward_propagation.py
-   │     ├─ mnp.py
-   │     └─ perceptron.py
-   │
-   ├─ core/
-   │  └─ perceptron.py
-   │
-   ├─ open_cv/
-   │  ├─ cascades/
-   │  ├─ sample/
-   │  └─ open_cv_detection.py
-   │
-   └─ ui/
-      ├─ backward_propagation.py
-      ├─ forward_propagation.py
-      ├─ mlp.py
-      └─ perceptron_ui.py
+└── src/
+    ├── __init__.py
+    │
+    ├── assets/
+    │   ├── image/
+    │   │   └── nn_image.jpg  # Home page banner
+    │   └── documents/        # In-app documentation pages
+    │       ├── perceptron.py
+    │       ├── forward_propagation.py
+    │       ├── back_propagation.py
+    │       └── mnp.py
+    │
+    ├── ui/                   # Interactive module pages
+    │   ├── perceptron_ui.py
+    │   ├── forward_propagation.py
+    │   ├── backward_propagation.py
+    │   └── mlp.py
+    │
+    └── open_cv/              # OpenCV detection module
+        ├── open_cv_detection.py
+        ├── cascades/         # Haar cascade XML files
+        └── sample/           # Sample images for demo
 ```
 
 ---
@@ -125,7 +102,7 @@ nntoolbox
 
 ```mermaid
 flowchart TB
-    A[streamlit_app.py] --> B[Streamlit UI Pages]
+    A[app.py] --> B[Streamlit UI Pages]
     B --> C[Perceptron UI]
     B --> D[Forward Prop UI]
     B --> E[Backward Prop UI]
@@ -159,45 +136,45 @@ flowchart LR
 
 ## Usage Guide
 
-* Use the sidebar to choose modules or documentation pages
-* **Perceptron / MLP**
-
-  * Select logic gates or upload CSV files
-  * Tune learning parameters
-* **OpenCV Detection**
-
-  * Choose detection type
-  * Use webcam or upload images
-* Visualize training behavior and results interactively
+- Use the **sidebar** to navigate between modules or documentation pages
+- **Perceptron / MLP**
+  - Select logic gates or upload a CSV file
+  - Tune learning parameters and train
+- **OpenCV Detection**
+  - Choose a detection type (Face, Eye+Smile, Stop Sign, Face Count)
+  - Use webcam, upload a video, or upload an image
+- Visualize training behavior and results interactively
 
 ---
 
 ## Data Input Rules
 
-* **Perceptron**
+- **Perceptron** — exactly 2 binary feature columns + binary target
+- **MLP** — numeric & categorical features; binary or multiclass target
+- **OpenCV** — webcam, image files (JPG/JPEG/PNG), or video files
+- Large datasets are restricted to maintain UI performance
 
-  * Exactly 2 binary feature columns
-  * Binary target
-* **MLP**
+---
 
-  * Binary or multiclass targets
-  * Supports numeric & categorical features
-* **OpenCV Detection**
+## Dependencies
 
-  * Webcam or image files (JPG, JPEG, PNG)
-  * Haar Cascade-based detection
-* Large datasets are restricted to maintain UI performance
+| Package | Purpose |
+|---|---|
+| `streamlit` | Web UI framework |
+| `numpy` | Numerical computation |
+| `pandas` | Data handling |
+| `plotly` | Interactive charts |
+| `opencv-python` | Computer vision |
+| `streamlit-webrtc` | Real-time webcam on cloud |
+| `av` | Video processing |
 
 ---
 
 ## Notes
 
-* This project prioritizes **learning & explainability** over raw performance
-* MLP module includes:
-
-  * Standardization
-  * One-hot encoding
-* Designed for **students, demos, and concept clarity**
+- This project prioritizes **learning & explainability** over raw performance
+- MLP module includes standardization and one-hot encoding
+- Designed for **students, demos, and concept clarity**
 
 ---
 
