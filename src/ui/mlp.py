@@ -122,7 +122,7 @@ def mlp_page():
 
         if df_uploaded is not None:
             st.subheader("Uploaded Data Preview")
-            st.dataframe(df_uploaded.head(10), hide_index=True, use_container_width=True)
+            st.dataframe(df_uploaded.head(10), hide_index=True, width='stretch')
 
             column_options = list(df_uploaded.columns)
             target_col = st.selectbox("Select target column", column_options)
@@ -192,7 +192,7 @@ def mlp_page():
             np.column_stack([X, y]),
             columns=["X1", "X2", "Output"]
         )
-        st.dataframe(df_preview, hide_index=True, use_container_width=True)
+        st.dataframe(df_preview, hide_index=True, width='stretch')
 
 # -------------------------------------------------
 # Hyperparameters
@@ -294,7 +294,7 @@ def mlp_page():
             labels={"x": "Epoch", "y": "Mean Squared Error"},
             title="MLP Training Loss"
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
 # -------------------------------------------------
 # Prediction
