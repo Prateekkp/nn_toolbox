@@ -2,10 +2,10 @@ from pathlib import Path
 
 import streamlit as st
 from src.ui.perceptron_ui import perceptron_page
-from src.assets.documnets.perceptron import perceptron_docs_page
-from src.assets.documnets.forward_propagation import forward_propagation_docs_page
-from src.assets.documnets.back_propagation import back_propagation_docs_page
-from src.assets.documnets.mnp import mnp_docs_page
+from src.assets.documents.perceptron import perceptron_docs_page
+from src.assets.documents.forward_propagation import forward_propagation_docs_page
+from src.assets.documents.back_propagation import back_propagation_docs_page
+from src.assets.documents.mnp import mnp_docs_page
 from src.ui.forward_propagation import forward_propagation_page
 from src.ui.backward_propagation import backward_propagation_page
 from src.ui.mlp import mlp_page
@@ -55,16 +55,6 @@ doc_page = st.sidebar.radio(
     key="doc_nav"
 )
 
-# Spacer to push content down
-# st.sidebar.markdown("<div style='height: 15vh;'></div>", unsafe_allow_html=True)
-
-# if st.sidebar.button("Reset Session"):
-#     st.session_state.clear()
-#     if hasattr(st, "rerun"):
-#         st.rerun()
-#     else:
-#         st.experimental_rerun()
-
 # ---------------------------
 # Main Content Routing
 # ---------------------------
@@ -88,7 +78,7 @@ if page == "Home":
     )
 
 
-    image_path = Path(__file__).parent / "src" / "assets" / "nn_image.jpg"
+    image_path = Path(__file__).parent / "src" / "assets" / "image" / "nn_image.jpg"
     col_left, col_center, col_right = st.columns([1, 1, 1])
     with col_center:
         st.image(str(image_path), width=1200)
