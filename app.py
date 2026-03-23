@@ -1,21 +1,23 @@
 from pathlib import Path
 
 import streamlit as st
-from src.ui.perceptron_ui import perceptron_page
+from src.learner_pages.perceptron_ui import perceptron_page
 from src.assets.documents.perceptron import perceptron_docs_page
 from src.assets.documents.forward_propagation import forward_propagation_docs_page
 from src.assets.documents.back_propagation import back_propagation_docs_page
 from src.assets.documents.mnp import mnp_docs_page
-from src.ui.forward_propagation import forward_propagation_page
-from src.ui.backward_propagation import backward_propagation_page
-from src.ui.mlp import mlp_page
-from src.open_cv.open_cv_detection import opencv_detection_page
+from src.learner_pages.forward_propagation import forward_propagation_page
+from src.learner_pages.backward_propagation import backward_propagation_page
+from src.learner_pages.mlp import mlp_page
+from src.ai_playground_pages.ask_ai import explore_data_page
+from src.application_pages.rnn.rnn_landing import rnn_application_page
+from src.application_pages.open_cv.open_cv_landing import open_cv_landing_page
 
 # ---------------------------
 # Page Configuration
 # ---------------------------
 st.set_page_config(
-    page_title="Neural Network Toolbox",
+    page_title="NeuroLens",
     page_icon="🧑‍💻",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -26,41 +28,123 @@ st.set_page_config(
 # ---------------------------
 st.sidebar.title("Navigation")
 
-page = st.sidebar.radio(
-    "Select Module",
-    [
-        "Home",
-        "Perceptron",
-        "Forward Propagation",
-        "Backward Propagation",
-        "Multi-Layer Perceptron (MNP)",
-        "OpenCV"
-    ]
-)
 
-st.sidebar.info(
-    "To choose a module first set below to 'None'"
-)
+def _activate_ai_playground():
+    st.session_state["learner_nav"] = None
+    st.session_state["application_nav"] = None
+    st.session_state["doc_nav"] = None
 
+
+def _activate_learner():
+    st.session_state["ai_playground_nav"] = None
+    st.session_state["application_nav"] = None
+    st.session_state["doc_nav"] = None
+
+
+def _activate_application():
+    st.session_state["ai_playground_nav"] = None
+    st.session_state["learner_nav"] = None
+    st.session_state["doc_nav"] = None
+
+
+def _activate_docs():
+    st.session_state["ai_playground_nav"] = None
+    st.session_state["learner_nav"] = None
+    st.session_state["application_nav"] = None
+
+# Home button — acts as a simple toggle
+if st.sidebar.button("Home", use_container_width=True):
+    st.session_state["learner_nav"] = None
+    st.session_state["application_nav"] = None
+    st.session_state["ai_playground_nav"] = None
+    st.session_state["doc_nav"] = None
+    st.session_state["_page"] = "Home"
+    st.rerun()
 
 st.sidebar.markdown("---")
 
-st.sidebar.subheader("Documentation")
-doc_page = st.sidebar.radio(
-    "Select Documentation",
-    ["None", "Perceptron", 
-     "Forward Propagation", 
-     "Backward Propagation", 
-     "Multi-Layer Perceptron (MNP)"],
-    key="doc_nav"
+st.sidebar.markdown("**AI Playground**")
+st.sidebar.caption("Use AI to quickly explore uploaded datasets.")
+ai_playground_page = st.sidebar.selectbox(
+    "AI Playground",
+    ["Explore Data"],
+    index=None,
+    placeholder="Pick a tool...",
+    key="ai_playground_nav",
+    label_visibility="collapsed",
+    on_change=_activate_ai_playground,
 )
+
+st.sidebar.markdown("---")
+
+st.sidebar.markdown("**Learner**")
+st.sidebar.caption("Step through core neural network concepts.")
+learner_page = st.sidebar.selectbox(
+    "Learner",
+    [
+        "Perceptron",
+        "Forward Propagation",
+        "Backward Propagation",
+        "Multi-Layer Perceptron (MLP)"
+    ],
+    index=None,
+    placeholder="Pick a concept...",
+    key="learner_nav",
+    label_visibility="collapsed",
+    on_change=_activate_learner,
+)
+
+st.sidebar.markdown("---")
+
+st.sidebar.markdown("**Application**")
+st.sidebar.caption("See neural network concepts applied in real projects.")
+application_page = st.sidebar.selectbox(
+    "Application",
+    ["OpenCV", "RNN"],
+    index=None,
+    placeholder="Pick an application...",
+    key="application_nav",
+    label_visibility="collapsed",
+    on_change=_activate_application,
+)
+
+st.sidebar.markdown("---")
+
+st.sidebar.markdown("**Documentation**")
+st.sidebar.caption("Reference guides for each module.")
+doc_page = st.sidebar.selectbox(
+    "Select Documentation",
+    [
+        "Perceptron",
+        "Forward Propagation",
+        "Backward Propagation",
+        "Multi-Layer Perceptron (MLP)"
+    ],
+    index=None,
+    placeholder="Pick a topic...",
+    key="doc_nav",
+    label_visibility="collapsed",
+    on_change=_activate_docs,
+)
+
+# ---------------------------
+# Page Resolution
+# ---------------------------
+# Priority: ai_playground > learner > application > doc > home
+if ai_playground_page is not None:
+    page = ai_playground_page
+elif learner_page is not None:
+    page = learner_page
+elif application_page is not None:
+    page = application_page
+elif doc_page is not None:
+    page = f"Docs - {doc_page}"
+else:
+    page = "Home"
 
 # ---------------------------
 # Main Content Routing
 # ---------------------------
-if doc_page != "None":
-    page = f"Docs - {doc_page}"
-
 if page == "Home":
 
     # ---------------------------
@@ -68,7 +152,7 @@ if page == "Home":
     # ---------------------------
     st.markdown(
         """
-        <h1 style="text-align:center;">Neural Network Learning Toolbox</h1>
+        <h1 style="text-align:center;">NeuroLens</h1>
         <p style="text-align:center; font-size:16px;">
         Build, tune, and understand neural networks from scratch — one concept at a time.
         </p>
@@ -77,12 +161,10 @@ if page == "Home":
         unsafe_allow_html=True
     )
 
-
     image_path = Path(__file__).parent / "src" / "assets" / "image" / "nn_image.jpg"
     col_left, col_center, col_right = st.columns([1, 1, 1])
     with col_center:
         st.image(str(image_path), width=1200)
-        # st.image(str(image_path), width=300)
 
     st.subheader("About This Toolbox")
 
@@ -106,8 +188,6 @@ if page == "Home":
     st.info("Use the sidebar to navigate through different neural network concepts.")
 
 elif page == "Perceptron":
-
-    # st.subheader("Perceptron Learning Module")
     perceptron_page()
 
 elif page == "Forward Propagation":
@@ -116,11 +196,17 @@ elif page == "Forward Propagation":
 elif page == "Backward Propagation":
     backward_propagation_page()
 
-elif page == "Multi-Layer Perceptron (MNP)":
+elif page == "Multi-Layer Perceptron (MLP)":
     mlp_page()
 
 elif page == "OpenCV":
-    opencv_detection_page()
+    open_cv_landing_page()
+
+elif page == "RNN":
+    rnn_application_page()
+
+elif page == "Explore Data":
+    explore_data_page()
 
 elif page == "Docs - Perceptron":
     perceptron_docs_page()
@@ -131,7 +217,7 @@ elif page == "Docs - Forward Propagation":
 elif page == "Docs - Backward Propagation":
     back_propagation_docs_page()
 
-elif page == "Docs - Multi-Layer Perceptron (MNP)":
+elif page == "Docs - Multi-Layer Perceptron (MLP)":
     mnp_docs_page()
 
 # ---------------------------
