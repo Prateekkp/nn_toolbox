@@ -5,3 +5,11 @@ numpy
 opencv-python-headless
 av
 streamlit-webrtc
+torch
+python-dotenv
+keras
+SpeechRecognition
+matplotlib
+scikit-learn
+statsmodels
+xgboost
