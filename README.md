@@ -290,4 +290,4 @@ MIT License — free to use, modify, and share for learning and beyond.
 ---
 
 **Last Updated**: March 2026  
-**Maintainer**: Dean's Project Team
+**Maintainer**: Prateek Kumar Prasad
