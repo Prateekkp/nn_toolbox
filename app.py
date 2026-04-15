@@ -11,6 +11,7 @@ from src.learner_pages.backward_propagation import backward_propagation_page
 from src.learner_pages.mlp import mlp_page
 from src.ai_playground_pages.ask_ai import explore_data_page
 from src.ai_playground_pages.personality_decoder import personality_decoder_page
+from src.ai_playground_pages.palm import palm_reader_page
 from src.application_pages.rnn.rnn_landing import rnn_application_page
 from src.application_pages.open_cv.open_cv_landing import open_cv_landing_page
 
@@ -68,7 +69,7 @@ st.sidebar.markdown("**AI Playground**")
 st.sidebar.caption("Use AI to quickly explore uploaded datasets.")
 ai_playground_page = st.sidebar.selectbox(
     "AI Playground",
-    ["Explore Data", "Personality Decoder"],
+    ["Explore Data", "Personality Decoder", "Palm Reader"],
     index=None,
     placeholder="Pick a tool...",
     key="ai_playground_nav",
@@ -211,6 +212,9 @@ elif page == "Explore Data":
 
 elif page == "Personality Decoder":
     personality_decoder_page()
+
+elif page == "Palm Reader":
+    palm_reader_page()
 
 elif page == "Docs - Perceptron":
     perceptron_docs_page()
