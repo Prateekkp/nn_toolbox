@@ -13,7 +13,6 @@ from src.ai_playground_pages.ask_ai import explore_data_page
 from src.ai_playground_pages.personality_decoder import personality_decoder_page
 from src.ai_playground_pages.palm import palm_reader_page
 from src.application_pages.rnn.rnn_landing import rnn_application_page
-from src.application_pages.open_cv.open_cv_landing import open_cv_landing_page
 
 # ---------------------------
 # Page Configuration
@@ -202,7 +201,13 @@ elif page == "Multi-Layer Perceptron (MLP)":
     mlp_page()
 
 elif page == "OpenCV":
-    open_cv_landing_page()
+    try:
+        from src.application_pages.open_cv.open_cv_landing import open_cv_landing_page
+        open_cv_landing_page()
+    except Exception as e:
+        st.warning("OpenCV pages are available on local environment only.")
+        st.info("Please run the app locally to use OpenCV features.")
+        st.caption(f"Import detail: {e}")
 
 elif page == "RNN":
     rnn_application_page()
