@@ -13,3 +13,5 @@ matplotlib
 scikit-learn
 statsmodels
 xgboost
+requests
+mediapipe
