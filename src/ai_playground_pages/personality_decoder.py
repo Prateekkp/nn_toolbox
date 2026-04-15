@@ -50,30 +50,40 @@ def get_question_rules(mode):
 
 
 def personality_decoder_page():
+    PD_PHASE = "pd_phase"
+    PD_NAME = "pd_name"
+    PD_NAME_LINES = "pd_name_lines"
+    PD_MODE = "pd_question_mode"
+    PD_AGE = "pd_age"
+    PD_PROFESSION = "pd_profession"
+    PD_STEP = "pd_dynamic_step"
+    PD_ANSWERS = "pd_dynamic_answers"
+    PD_CURRENT_Q = "pd_current_question"
+
     # -------------------------------
     # SESSION STATE INIT
     # -------------------------------
     def reset():
-        st.session_state.phase = "intro"       # intro -> dynamic -> result
-        st.session_state.name = ""
-        st.session_state.name_lines = []
-        st.session_state.question_mode = "Gen Z Vibes"
-        st.session_state.age = ""
-        st.session_state.profession = ""
-        st.session_state.dynamic_step = 0      # 0 to 4 (5 questions)
-        st.session_state.dynamic_answers = []
-        st.session_state.current_question = ""
+        st.session_state[PD_PHASE] = "intro"       # intro -> dynamic -> result
+        st.session_state[PD_NAME] = ""
+        st.session_state[PD_NAME_LINES] = []
+        st.session_state[PD_MODE] = "Gen Z Vibes"
+        st.session_state[PD_AGE] = ""
+        st.session_state[PD_PROFESSION] = ""
+        st.session_state[PD_STEP] = 0      # 0 to 4 (5 questions)
+        st.session_state[PD_ANSWERS] = []
+        st.session_state[PD_CURRENT_Q] = ""
 
     for key, default in {
-        "phase": "intro",
-        "name": "",
-        "name_lines": [],
-        "question_mode": "Gen Z Vibes",
-        "age": "",
-        "profession": "",
-        "dynamic_step": 0,
-        "dynamic_answers": [],
-        "current_question": ""
+        PD_PHASE: "intro",
+        PD_NAME: "",
+        PD_NAME_LINES: [],
+        PD_MODE: "Gen Z Vibes",
+        PD_AGE: "",
+        PD_PROFESSION: "",
+        PD_STEP: 0,
+        PD_ANSWERS: [],
+        PD_CURRENT_Q: ""
     }.items():
         if key not in st.session_state:
             st.session_state[key] = default
@@ -81,7 +91,7 @@ def personality_decoder_page():
     # -------------------------------
     # PHASE 1 - INTRO FORM
     # -------------------------------
-    if st.session_state.phase == "intro":
+    if st.session_state[PD_PHASE] == "intro":
         st.title("Personality Decoder")
         st.write("Three quick things before we get into it.")
 
@@ -97,10 +107,10 @@ def personality_decoder_page():
             if not name.strip() or not age.strip() or not profession.strip():
                 st.warning("Fill everything. All three.")
             else:
-                st.session_state.name = name.strip()
-                st.session_state.age = age.strip()
-                st.session_state.profession = profession.strip()
-                st.session_state.question_mode = question_mode
+                st.session_state[PD_NAME] = name.strip()
+                st.session_state[PD_AGE] = age.strip()
+                st.session_state[PD_PROFESSION] = profession.strip()
+                st.session_state[PD_MODE] = question_mode
 
                 # Pre-generate 5 name astrology lines
                 name_prompt = f"""
@@ -116,7 +126,7 @@ Rules:
 - Output exactly 5 lines, one per line, nothing else
 """
                 raw = call_llm(name_prompt).strip()
-                st.session_state.name_lines = [line.strip() for line in raw.split("\n") if line.strip()][:5]
+                st.session_state[PD_NAME_LINES] = [line.strip() for line in raw.split("\n") if line.strip()][:5]
 
                 # Generate first dynamic question
                 prompt = f"""
@@ -131,31 +141,31 @@ Generate the FIRST follow-up question to decode their personality deeper.
 
 Rules:
 - One line only. Max 10 words. Short and punchy and in plain english.
-- {get_question_rules(st.session_state.question_mode)}
+- {get_question_rules(st.session_state[PD_MODE])}
 - Feel like a friend asking, not an interviewer. No emojis.
 """
-                st.session_state.current_question = call_llm(prompt).strip()
-                st.session_state.phase = "dynamic"
+                st.session_state[PD_CURRENT_Q] = call_llm(prompt).strip()
+                st.session_state[PD_PHASE] = "dynamic"
                 st.rerun()
 
     # -------------------------------
     # PHASE 2 - DYNAMIC QUESTIONS
     # -------------------------------
-    elif st.session_state.phase == "dynamic":
-        name = st.session_state.name
-        step = st.session_state.dynamic_step  # 0-indexed, goes 0 to 4
+    elif st.session_state[PD_PHASE] == "dynamic":
+        name = st.session_state[PD_NAME]
+        step = st.session_state[PD_STEP]  # 0-indexed, goes 0 to 4
 
         st.title("Personality Decoder")
 
-        if st.session_state.name_lines:
-            line = st.session_state.name_lines[min(step, len(st.session_state.name_lines) - 1)]
+        if st.session_state[PD_NAME_LINES]:
+            line = st.session_state[PD_NAME_LINES][min(step, len(st.session_state[PD_NAME_LINES]) - 1)]
             st.warning(f"{name} - {line}")
             st.write("")
 
         # Progress
         st.caption(f"Question {step + 1} of 5")
 
-        st.subheader(st.session_state.current_question)
+        st.subheader(st.session_state[PD_CURRENT_Q])
 
         user_input = st.text_input("Your answer", key=f"dyn_{step}")
 
@@ -163,26 +173,26 @@ Rules:
             if not user_input.strip():
                 st.warning("Don't leave it blank.")
             else:
-                st.session_state.dynamic_answers.append({
-                    "question": st.session_state.current_question,
+                st.session_state[PD_ANSWERS].append({
+                    "question": st.session_state[PD_CURRENT_Q],
                     "answer": user_input.strip()
                 })
-                st.session_state.dynamic_step += 1
+                st.session_state[PD_STEP] += 1
 
-                if st.session_state.dynamic_step < 5:
+                if st.session_state[PD_STEP] < 5:
                     # Generate next question
                     qa_history = "\n".join([
                         f"Q: {qa['question']}\nA: {qa['answer']}"
-                        for qa in st.session_state.dynamic_answers
+                        for qa in st.session_state[PD_ANSWERS]
                     ])
 
                     prompt = f"""
 You are a sharp personality analyst.
 
 User profile:
-- Name: {st.session_state.name}
-- Age: {st.session_state.age}
-- Profession: {st.session_state.profession}
+- Name: {st.session_state[PD_NAME]}
+- Age: {st.session_state[PD_AGE]}
+- Profession: {st.session_state[PD_PROFESSION]}
 
 Their answers so far:
 {qa_history}
@@ -191,25 +201,25 @@ Generate the NEXT follow-up question.
 
 Rules:
 - One line only. Max 10 words. Short and punchy.
-- {get_question_rules(st.session_state.question_mode)}
+- {get_question_rules(st.session_state[PD_MODE])}
 - Feel like a friend asking, not an interviewer. No emojis.
 """
-                    st.session_state.current_question = call_llm(prompt).strip()
+                    st.session_state[PD_CURRENT_Q] = call_llm(prompt).strip()
                     st.rerun()
 
                 else:
-                    st.session_state.phase = "result"
+                    st.session_state[PD_PHASE] = "result"
                     st.rerun()
 
     # -------------------------------
     # PHASE 3 - RESULT
     # -------------------------------
-    elif st.session_state.phase == "result":
-        name = st.session_state.name
+    elif st.session_state[PD_PHASE] == "result":
+        name = st.session_state[PD_NAME]
 
         qa_history = "\n".join([
             f"Q: {qa['question']}\nA: {qa['answer']}"
-            for qa in st.session_state.dynamic_answers
+            for qa in st.session_state[PD_ANSWERS]
         ])
 
         final_prompt = f"""
@@ -217,8 +227,8 @@ You are a brutally honest, funny Gen Z personality analyst.
 
 User:
 - Name: {name}
-- Age: {st.session_state.age}
-- Profession: {st.session_state.profession}
+- Age: {st.session_state[PD_AGE]}
+- Profession: {st.session_state[PD_PROFESSION]}
 
 Their answers:
 {qa_history}

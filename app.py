@@ -30,6 +30,26 @@ st.set_page_config(
 st.sidebar.title("Navigation")
 
 
+def _reset_palm_state():
+    for key in ["palm_phase", "palm_result", "palm_image_bytes", "palm_annotated_img", "palm_line_count"]:
+        st.session_state.pop(key, None)
+
+
+def _reset_personality_state():
+    for key in [
+        "pd_phase",
+        "pd_name",
+        "pd_name_lines",
+        "pd_question_mode",
+        "pd_age",
+        "pd_profession",
+        "pd_dynamic_step",
+        "pd_dynamic_answers",
+        "pd_current_question",
+    ]:
+        st.session_state.pop(key, None)
+
+
 def _activate_ai_playground():
     st.session_state["learner_nav"] = None
     st.session_state["application_nav"] = None
@@ -142,6 +162,14 @@ elif doc_page is not None:
     page = f"Docs - {doc_page}"
 else:
     page = "Home"
+
+previous_page = st.session_state.get("_active_page")
+if previous_page != page:
+    if page == "Palm Reader":
+        _reset_palm_state()
+    elif page == "Personality Decoder":
+        _reset_personality_state()
+    st.session_state["_active_page"] = page
 
 # ---------------------------
 # Main Content Routing

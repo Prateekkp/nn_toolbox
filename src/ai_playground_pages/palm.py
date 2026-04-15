@@ -377,22 +377,28 @@ Rules:
 # PAGE
 # -------------------------------
 def palm_reader_page():
+    PALM_PHASE = "palm_phase"
+    PALM_RESULT = "palm_result"
+    PALM_IMAGE_BYTES = "palm_image_bytes"
+    PALM_ANNOTATED_IMG = "palm_annotated_img"
+    PALM_LINE_COUNT = "palm_line_count"
+
     for key, default in {
-        "phase": "capture",
-        "result": "",
-        "image_bytes": None,
-        "annotated_img": None,
-        "line_count": 0,
+        PALM_PHASE: "capture",
+        PALM_RESULT: "",
+        PALM_IMAGE_BYTES: None,
+        PALM_ANNOTATED_IMG: None,
+        PALM_LINE_COUNT: 0,
     }.items():
         if key not in st.session_state:
             st.session_state[key] = default
 
     def reset():
-        st.session_state.phase = "capture"
-        st.session_state.result = ""
-        st.session_state.image_bytes = None
-        st.session_state.annotated_img = None
-        st.session_state.line_count = 0
+        st.session_state[PALM_PHASE] = "capture"
+        st.session_state[PALM_RESULT] = ""
+        st.session_state[PALM_IMAGE_BYTES] = None
+        st.session_state[PALM_ANNOTATED_IMG] = None
+        st.session_state[PALM_LINE_COUNT] = 0
 
     st.title("Palm Reader")
 
@@ -409,7 +415,7 @@ def palm_reader_page():
         )
         return
 
-    if st.session_state.phase == "capture":
+    if st.session_state[PALM_PHASE] == "capture":
         st.write("Hold your dominant hand flat, face the camera, fingers slightly apart. Take a clear photo.")
         st.write("---")
         st.info("Good lighting matters. Natural light or bright indoor light works best.")
@@ -417,31 +423,31 @@ def palm_reader_page():
         img_file = st.camera_input("Take a photo of your palm")
 
         if img_file is not None:
-            st.session_state.image_bytes = img_file.getvalue()
-            st.session_state.phase = "confirm"
+            st.session_state[PALM_IMAGE_BYTES] = img_file.getvalue()
+            st.session_state[PALM_PHASE] = "confirm"
             st.rerun()
 
-    elif st.session_state.phase == "confirm":
+    elif st.session_state[PALM_PHASE] == "confirm":
         st.write("Good shot? Make sure lines are visible.")
         st.write("---")
 
-        st.image(st.session_state.image_bytes, caption="Your palm", use_container_width=True)
+        st.image(st.session_state[PALM_IMAGE_BYTES], caption="Your palm", use_container_width=True)
 
         col1, col2 = st.columns([7, 1])
         with col1:
             if st.button("Read my palm"):
-                st.session_state.phase = "processing"
+                st.session_state[PALM_PHASE] = "processing"
                 st.rerun()
         with col2:
             if st.button("Retake"):
                 reset()
                 st.rerun()
 
-    elif st.session_state.phase == "processing":
+    elif st.session_state[PALM_PHASE] == "processing":
         st.write("---")
 
         with st.spinner("Detecting hand landmarks..."):
-            img_array = np.frombuffer(st.session_state.image_bytes, np.uint8)
+            img_array = np.frombuffer(st.session_state[PALM_IMAGE_BYTES], np.uint8)
             img_bgr = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
 
             palm_crop, palm_poly, landmark_dict, error = detect_and_crop_palm(img_bgr)
@@ -455,16 +461,16 @@ def palm_reader_page():
 
         with st.spinner("Detecting palm lines..."):
             annotated, line_summary, line_count = detect_palm_lines(palm_crop, palm_poly)
-            st.session_state.line_count = line_count
+            st.session_state[PALM_LINE_COUNT] = line_count
 
             _, buf = cv2.imencode(".jpg", annotated)
-            st.session_state.annotated_img = buf.tobytes()
+            st.session_state[PALM_ANNOTATED_IMG] = buf.tobytes()
 
         with st.spinner("Analyzing your palm..."):
             try:
                 result = analyze_with_llm(annotated, line_summary, line_count, landmark_dict)
-                st.session_state.result = result
-                st.session_state.phase = "result"
+                st.session_state[PALM_RESULT] = result
+                st.session_state[PALM_PHASE] = "result"
                 st.rerun()
             except Exception as e:
                 st.error(f"LLM call failed: {e}")
@@ -472,19 +478,19 @@ def palm_reader_page():
                     reset()
                     st.rerun()
 
-    elif st.session_state.phase == "result":
+    elif st.session_state[PALM_PHASE] == "result":
         st.write("---")
 
         col1, col2 = st.columns(2)
         with col1:
             st.caption("Your palm (original)")
-            st.image(st.session_state.image_bytes, use_container_width=True)
+            st.image(st.session_state[PALM_IMAGE_BYTES], use_container_width=True)
         with col2:
-            st.caption(f"Detected lines ({st.session_state.line_count} found)")
-            st.image(st.session_state.annotated_img, use_container_width=True)
+            st.caption(f"Detected lines ({st.session_state[PALM_LINE_COUNT]} found)")
+            st.image(st.session_state[PALM_ANNOTATED_IMG], use_container_width=True)
 
         st.write("---")
-        st.markdown(st.session_state.result)
+        st.markdown(st.session_state[PALM_RESULT])
         st.write("---")
 
         if st.button("Read again"):
