@@ -1,7 +1,13 @@
 import streamlit as st
 import base64
-import cv2
-import numpy as np
+try:
+    import cv2
+    import numpy as np
+    CV_IMPORT_ERROR = None
+except Exception as import_err:
+    cv2 = None
+    np = None
+    CV_IMPORT_ERROR = import_err
 import os
 import re
 import requests
@@ -376,6 +382,14 @@ def palm_reader_page():
         st.session_state.line_count = 0
 
     st.title("Palm Reader")
+
+    if CV_IMPORT_ERROR is not None:
+        st.error(
+            "OpenCV/NumPy failed to load in this environment. "
+            "Please redeploy after updating requirements and packages. "
+            f"Original import error: {CV_IMPORT_ERROR}"
+        )
+        return
 
     if st.session_state.phase == "capture":
         st.write("Hold your dominant hand flat, face the camera, fingers slightly apart. Take a clear photo.")
