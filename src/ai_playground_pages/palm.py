@@ -27,6 +27,19 @@ LEGACY_MODEL_PATH = Path("hand_landmarker.task")
 PALM_SECTIONS = ["Life line", "Heart line", "Head line", "Fate line", "Overall vibe"]
 
 
+def is_streamlit_cloud_env():
+    cloud_markers = [
+        os.getenv("STREAMLIT_SHARING_MODE"),
+        os.getenv("STREAMLIT_CLOUD"),
+        os.getenv("STREAMLIT_RUNTIME"),
+    ]
+    if any(cloud_markers):
+        return True
+
+    cwd = str(Path.cwd()).replace("\\", "/")
+    return cwd.startswith("/mount/src")
+
+
 def call_nvidia_vision_llm(prompt, image_bytes):
     if not NVIDIA_API_KEY:
         raise ValueError("Missing NVIDIA_API_KEY in .env file.")
@@ -382,6 +395,11 @@ def palm_reader_page():
         st.session_state.line_count = 0
 
     st.title("Palm Reader")
+
+    if is_streamlit_cloud_env():
+        st.warning("Palm Reader is currently supported on local machine only.")
+        st.info("Please run this app locally to use OpenCV and MediaPipe features reliably.")
+        return
 
     if CV_IMPORT_ERROR is not None:
         st.error(
