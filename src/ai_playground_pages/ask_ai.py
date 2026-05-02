@@ -7,58 +7,156 @@ import hashlib
 import os
 import traceback
 import io
-import sys
 from contextlib import redirect_stdout
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+def _load_env_file():
+    """Load .env from the current folder or nearest parent folder."""
+    start = Path(__file__).resolve().parent
+    candidates = [start / ".env", *[p / ".env" for p in start.parents], Path.cwd() / ".env"]
+
+    for env_path in candidates:
+        if env_path.exists():
+            load_dotenv(dotenv_path=env_path)
+            return env_path
+
+    # Fallback: let python-dotenv use its default discovery behavior.
+    load_dotenv()
+    return None
+
+
+LOADED_ENV_PATH = _load_env_file()
 
 # ==============================
 # CONFIG
 # ==============================
-NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "")
-NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
-MODEL_ID = "meta/llama-3.1-70b-instruct"
+GROQ_API_KEY = (
+    os.getenv("GROQ_API_KEY", "")
+    or "gsk_PASTE-YOUR-GROQ-KEY-HERE"  # optional local fallback for quick testing
+).strip()
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+MODEL_ID     = "llama-3.3-70b-versatile"  # best free Groq model
 MAX_FILE_SIZE_MB = 50
-MAX_CHART_ROWS = 100
+MAX_CHART_ROWS   = 100
 
 
 # ==============================
-# LLM CALL
+# LLM CALL  (Groq)
 # ==============================
 def call_nvidia_llm(prompt, retries=2, max_tokens=1000):
-    if not NVIDIA_API_KEY:
-        return "Error: NVIDIA_API_KEY not set in environment."
+    """Kept original name to avoid touching every call-site — backed by Groq now."""
+    if not GROQ_API_KEY or GROQ_API_KEY == "gsk_PASTE-YOUR-GROQ-KEY-HERE":
+        st.error("GROQ_API_KEY not set. Add it to .env or paste it in the config above.")
+        st.stop()
 
     headers = {
-        "Authorization": f"Bearer {NVIDIA_API_KEY}",
-        "Content-Type": "application/json"
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json",
     }
 
     payload = {
         "model": MODEL_ID,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.2,
-        "max_tokens": max_tokens
+        "max_tokens": max_tokens,
+        "temperature": 0.7,
+        "top_p": 1.0,
+        "stream": False,
     }
 
     for attempt in range(retries + 1):
         try:
-            response = requests.post(NVIDIA_API_URL, headers=headers, json=payload, timeout=60)
+            response = requests.post(GROQ_API_URL, headers=headers, json=payload, timeout=60)
+
             if response.status_code == 200:
                 return response.json()["choices"][0]["message"]["content"]
+            elif response.status_code == 401:
+                st.error("❌ 401 — Groq key is invalid or malformed.")
+                st.caption(f"Response: {response.text}")
+                st.stop()
+            elif response.status_code == 403:
+                st.error("❌ 403 — Groq access denied. Check your key at console.groq.com.")
+                st.caption(f"Response: {response.text}")
+                st.stop()
             elif response.status_code == 429:
-                import time
-                time.sleep(2 ** attempt)
+                if attempt < retries:
+                    import time
+                    time.sleep(2 ** attempt)
+                    continue
+                else:
+                    st.warning("⚠️ 429 — Groq rate limit hit. Wait a moment and retry.")
+                    st.stop()
             else:
-                return f"API Error {response.status_code}: {response.text}"
+                st.error(f"❌ Unexpected error (HTTP {response.status_code})")
+                st.caption(f"Response: {response.text}")
+                st.stop()
+
         except requests.exceptions.Timeout:
             if attempt == retries:
-                return "Error: Request timed out. Please try again."
+                st.error("Request timed out. Please try again.")
+                st.stop()
+        except requests.exceptions.RequestException as e:
+            st.error(f"Network error: {e}")
+            st.stop()
         except Exception as e:
-            return f"Error: {str(e)}"
+            st.error(f"Unexpected error: {e}")
+            st.stop()
 
-    return "Error: Max retries exceeded."
+    st.error("Max retries exceeded.")
+    st.stop()
+
+
+# ==============================
+# ROBUST CSV LOADER
+# ==============================
+def load_csv_robust(uploaded_file):
+    issues = []
+    delimiters = [",", ";", "\t", "|", ":"]
+    encodings  = ["utf-8", "latin-1", "iso-8859-1", "cp1252"]
+
+    df             = None
+    encoding_used  = None
+    delimiter_used = None
+
+    for enc in encodings:
+        try:
+            uploaded_file.seek(0)
+            for delim in delimiters:
+                try:
+                    uploaded_file.seek(0)
+                    df = pd.read_csv(uploaded_file, encoding=enc, delimiter=delim, engine="python")
+                    if df.shape[0] > 0 and df.shape[1] > 1:
+                        encoding_used  = enc
+                        delimiter_used = delim
+                        break
+                except (pd.errors.ParserError, pd.errors.EmptyDataError):
+                    continue
+            if df is not None and df.shape[0] > 0:
+                break
+        except (UnicodeDecodeError, LookupError):
+            continue
+
+    if df is None or df.shape[0] == 0:
+        raise ValueError(
+            "Could not parse CSV with any encoding/delimiter combination. "
+            "Verify file is a valid CSV and try re-saving from Excel or Google Sheets."
+        )
+
+    if encoding_used != "utf-8":
+        issues.append(f"Encoding: {encoding_used} (not UTF-8)")
+    if delimiter_used != ",":
+        issues.append(f"Delimiter detected: '{delimiter_used}' (not comma)")
+
+    original_cols = df.columns.tolist()
+    df.columns = [
+        str(col).strip().replace("\\", "_").replace("/", "_").replace(":", "_")
+        for col in df.columns
+    ]
+    for orig, clean in zip(original_cols, df.columns):
+        if orig != clean:
+            issues.append(f"Column '{orig}' → '{clean}' (cleaned special chars/whitespace)")
+
+    return df, issues
 
 
 # ==============================
@@ -75,21 +173,20 @@ def get_df_hash(df):
 @st.cache_data(show_spinner=False)
 def analyze_data(df_hash_key, df):
     summary = {}
-    summary["shape"] = df.shape
-    summary["dtypes"] = df.dtypes.astype(str)
-    summary["missing"] = df.isnull().sum()
+    summary["shape"]       = df.shape
+    summary["dtypes"]      = df.dtypes.astype(str)
+    summary["missing"]     = df.isnull().sum()
     summary["missing_pct"] = (df.isnull().sum() / len(df) * 100).round(2)
-    summary["duplicates"] = int(df.duplicated().sum())
+    summary["duplicates"]  = int(df.duplicated().sum())
 
     num_cols = df.select_dtypes(include=np.number).columns.tolist()
     cat_cols = df.select_dtypes(exclude=np.number).columns.tolist()
-
-    summary["numerical"] = num_cols
+    summary["numerical"]   = num_cols
     summary["categorical"] = cat_cols
 
     if num_cols:
         desc = df[num_cols].describe().T
-        desc["skewness"] = df[num_cols].skew()
+        desc["skewness"]     = df[num_cols].skew()
         desc["outlier_flag"] = (
             (df[num_cols] < (desc["mean"] - 3 * desc["std"])) |
             (df[num_cols] > (desc["mean"] + 3 * desc["std"]))
@@ -99,14 +196,14 @@ def analyze_data(df_hash_key, df):
     cat_stats = {}
     for col in cat_cols:
         cat_stats[col] = {
-            "unique": df[col].nunique(),
+            "unique":    df[col].nunique(),
             "top_value": df[col].mode()[0] if not df[col].mode().empty else "N/A",
-            "top_freq": int(df[col].value_counts().iloc[0]) if df[col].value_counts().shape[0] > 0 else 0
+            "top_freq":  int(df[col].value_counts().iloc[0]) if df[col].value_counts().shape[0] > 0 else 0,
         }
     summary["cat_stats"] = cat_stats
 
     if len(num_cols) >= 2:
-        corr = df[num_cols].corr().abs()
+        corr  = df[num_cols].corr().abs()
         upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
         top_corr = (
             upper.stack()
@@ -144,7 +241,7 @@ def get_column_chart_data(df_hash_key, col_name, col_dtype, df):
 def build_analysis_prompt(summary, df_head):
     num_stats_str = summary["num_stats"].to_string() if "num_stats" in summary else "N/A"
     cat_stats_str = json.dumps(summary["cat_stats"], indent=2) if "cat_stats" in summary else "N/A"
-    corr_str = summary["top_correlations"].to_string() if "top_correlations" in summary else "N/A"
+    corr_str      = summary["top_correlations"].to_string() if "top_correlations" in summary else "N/A"
 
     return f"""
 You are a senior data scientist. Analyze this dataset and respond ONLY with a valid JSON object.
@@ -192,15 +289,14 @@ Respond with this exact JSON structure:
 # PROMPT — TRAINING CODE GENERATION
 # ==============================
 def build_training_code_prompt(df, summary, model_name, problem_type, target_col):
-    col_info = {col: str(dtype) for col, dtype in df.dtypes.items()}
+    col_info    = {col: str(dtype) for col, dtype in df.dtypes.items()}
     sample_rows = df.head(3).to_dict(orient="records")
 
-    # Detect time-series: datetime-typed columns OR ts-related column name keywords
-    ts_keywords = {"timestamp", "date", "time", "datetime", "period", "hour", "day", "month", "year"}
-    col_names_lower = {c.lower() for c in df.columns}
+    ts_keywords      = {"timestamp", "date", "time", "datetime", "period", "hour", "day", "month", "year"}
+    col_names_lower  = {c.lower() for c in df.columns}
     has_datetime_col = any(str(dtype).startswith("datetime") for dtype in df.dtypes.values)
-    has_ts_keyword = bool(col_names_lower & ts_keywords)
-    is_timeseries = has_datetime_col or has_ts_keyword
+    has_ts_keyword   = bool(col_names_lower & ts_keywords)
+    is_timeseries    = has_datetime_col or has_ts_keyword
 
     split_instruction = (
         "IMPORTANT — this dataset appears to be a time series. "
@@ -260,27 +356,18 @@ Output ONLY the raw Python code. No explanation, no markdown fences.
 # EXECUTE GENERATED CODE
 # ==============================
 def execute_generated_code(code, df):
-    """
-    Runs LLM-generated code in a controlled namespace with df injected.
-    Returns (results_dict, stdout_str, error_str).
-    """
-    # CRITICAL: __builtins__ must be present so import statements inside exec()
-    # resolve installed packages normally. Without it, `import sklearn` raises
-    # ModuleNotFoundError even when sklearn is installed.
     import builtins
-    # Defensively reset the index so generated code never hits KeyError: 0
-    # when the LLM uses series[0] after a dropna/ffill that gaps the index.
-    df_clean = df.copy().reset_index(drop=True)
+    df_clean  = df.copy().reset_index(drop=True)
     namespace = {
         "__builtins__": builtins,
         "df": df_clean,
         "pd": pd,
         "np": np,
-        "results": {}
+        "results": {},
     }
 
     stdout_capture = io.StringIO()
-    error_str = None
+    error_str      = None
 
     try:
         with redirect_stdout(stdout_capture):
@@ -288,9 +375,8 @@ def execute_generated_code(code, df):
     except Exception:
         error_str = traceback.format_exc()
 
-    results = namespace.get("results", {})
+    results    = namespace.get("results", {})
     stdout_str = stdout_capture.getvalue()
-
     return results, stdout_str, error_str
 
 
@@ -322,7 +408,6 @@ def render_ai_summary(parsed):
     st.write(parsed.get("high_level_summary", "—"))
 
     col_a, col_b = st.columns(2)
-
     with col_a:
         st.markdown("**Key Observations**")
         for obs in parsed.get("key_observations", []):
@@ -330,7 +415,6 @@ def render_ai_summary(parsed):
         st.markdown("**Risks**")
         for risk in parsed.get("risks", []):
             st.write(f"- {risk}")
-
     with col_b:
         st.markdown("**Preprocessing Steps**")
         for i, step in enumerate(parsed.get("preprocessing_steps", []), 1):
@@ -349,15 +433,12 @@ def render_training_results(results):
         return
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Model", results.get("model_name", "—"))
-    c2.metric("Train Samples", results.get("train_size", "—"))
-    c3.metric("Test Samples", results.get("test_size", "—"))
+    c1.metric("Model",          results.get("model_name",     "—"))
+    c2.metric("Train Samples",  results.get("train_size",     "—"))
+    c3.metric("Test Samples",   results.get("test_size",      "—"))
     c4.metric("Split Strategy", results.get("split_strategy", "—").capitalize())
 
-    # ── Metric diagnostics ──────────────────────────────────────────────────
-    metrics = results.get("metrics", {})
-
-    # Normalise key lookup — LLM may return r2, R2, r2_score, R2_Score etc.
+    metrics       = results.get("metrics", {})
     metrics_lower = {k.lower(): float(v) for k, v in metrics.items()}
     r2   = metrics_lower.get("r2") or metrics_lower.get("r2_score")
     mape = metrics_lower.get("mape")
@@ -365,27 +446,16 @@ def render_training_results(results):
     if r2 is not None:
         if r2 < 0:
             st.error(
-                f"**Negative R\u00b2 detected ({r2:.4f})** \u2014 the model is performing worse than a "
-                "naive mean baseline. This is a real and honest result, not a bug. Common causes:\n\n"
-                "- **Random split on time-series data** \u2014 future rows leak into training, causing "
-                "the model to fail on temporally held-out test data. Re-train using a chronological "
-                "split (train = first 80%, test = last 20%).\n"
-                "- **Underfitting** \u2014 the selected model may be too simple for this data. "
-                "Try a tree-based model such as XGBoost or Random Forest.\n"
-                "- **Missing lag features** \u2014 demand / load forecasting typically requires lag and "
-                "rolling-window features. Consider adding them before training."
+                f"**Negative R² detected ({r2:.4f})** — model is worse than a naive mean baseline.\n\n"
+                "- **Random split on time-series** — use chronological split instead.\n"
+                "- **Underfitting** — try XGBoost or Random Forest.\n"
+                "- **Missing lag features** — demand forecasting needs lag/rolling features."
             )
         elif r2 < 0.3:
-            st.warning(
-                f"**Low R\u00b2 ({r2:.4f})** \u2014 the model explains less than 30% of variance in the target. "
-                "Consider feature engineering, a stronger model, or verifying the split strategy."
-            )
+            st.warning(f"**Low R² ({r2:.4f})** — model explains less than 30% of variance.")
 
     if mape is not None and mape > 20:
-        st.warning(
-            f"**High MAPE ({mape:.2f}%)** \u2014 prediction errors are large relative to actual values. "
-            "Common with seasonal demand data that lacks lag or calendar features."
-        )
+        st.warning(f"**High MAPE ({mape:.2f}%)** — large prediction errors relative to actuals.")
 
     st.markdown("#### Evaluation Metrics")
     if metrics:
@@ -400,8 +470,7 @@ def render_training_results(results):
     fi = results.get("feature_importances", {})
     if fi:
         st.markdown("#### Feature Importances")
-        fi_series = pd.Series(fi).sort_values(ascending=False).head(20)
-        st.bar_chart(fi_series)
+        st.bar_chart(pd.Series(fi).sort_values(ascending=False).head(20))
 
 
 # ==============================
@@ -411,7 +480,24 @@ def explore_data_page():
     st.title("Explore Your Data with AI Assistance")
     st.caption("Upload a CSV dataset for automated EDA and AI-generated insights.")
 
-    # ── Always-visible info boxes ──────────────────────────────────────────
+    if not GROQ_API_KEY or GROQ_API_KEY == "gsk_PASTE-YOUR-GROQ-KEY-HERE":
+        st.error("❌ GROQ_API_KEY not found or not set.")
+        if LOADED_ENV_PATH is not None:
+            st.caption(f"Detected .env at: {LOADED_ENV_PATH}")
+        else:
+            st.caption("No .env file was detected automatically.")
+        st.markdown(
+            """
+            **How to fix:**
+            1. Go to [console.groq.com](https://console.groq.com) → API Keys → Create key
+            2. Add `GROQ_API_KEY=gsk_xxxxxxxxxxxx` to your project `.env` file (repo root)
+            3. Restart Streamlit
+
+            **Or** paste your key directly in the `GROQ_API_KEY` line at the top of this file.
+            """
+        )
+        return
+
     col1, col2 = st.columns(2)
     with col1:
         st.info(
@@ -426,35 +512,26 @@ def explore_data_page():
             "**Limitations**\n\n"
             "- CSV files only, max **50 MB**\n"
             "- scikit-learn based (XGBoost / LightGBM optional, no deep learning)\n"
-            "- AI outputs are best-effort \u2014 review before production use\n"
+            "- AI outputs are best-effort — review before production use\n"
             "- LLM code may need a retry if it makes incorrect data assumptions"
         )
 
-    if not NVIDIA_API_KEY:
-        st.error("NVIDIA_API_KEY not found. Add it to your .env file.")
-        return
-
     st.divider()
 
-    uploaded_file = st.file_uploader("Upload dataset (CSV)", type=["csv"], help="Max 50 MB per file \u2022 CSV only")
+    uploaded_file = st.file_uploader("Upload dataset (CSV)", type=["csv"], help="Max 50 MB • CSV only")
 
     if uploaded_file:
-
         file_size_mb = uploaded_file.size / (1024 * 1024)
         if file_size_mb > MAX_FILE_SIZE_MB:
-            st.error(f"File too large ({file_size_mb:.1f} MB). Maximum allowed: {MAX_FILE_SIZE_MB} MB.")
+            st.error(f"File too large ({file_size_mb:.1f} MB). Maximum: {MAX_FILE_SIZE_MB} MB.")
             return
 
         try:
-            df = pd.read_csv(uploaded_file, encoding="utf-8")
-        except UnicodeDecodeError:
-            uploaded_file.seek(0)
-            try:
-                df = pd.read_csv(uploaded_file, encoding="latin-1")
-                st.info("File loaded using latin-1 encoding.")
-            except Exception as e:
-                st.error(f"Could not read file: {e}")
-                return
+            df, load_issues = load_csv_robust(uploaded_file)
+            if load_issues:
+                with st.expander("Load Details", expanded=False):
+                    for issue in load_issues:
+                        st.caption(f"ℹ️ {issue}")
         except Exception as e:
             st.error(f"Could not parse CSV: {e}")
             return
@@ -472,44 +549,36 @@ def explore_data_page():
 
         summary = analyze_data(df_hash, df)
 
-        # ==============================
-        # ABOUT DATA
-        # ==============================
+        # ── About Data ────────────────────────────────────────────────────────
         with st.expander("About Data", expanded=False):
-
             col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Rows", df.shape[0])
-            col2.metric("Columns", df.shape[1])
-            col3.metric("Missing Cells", int(summary["missing"].sum()))
+            col1.metric("Rows",           df.shape[0])
+            col2.metric("Columns",        df.shape[1])
+            col3.metric("Missing Cells",  int(summary["missing"].sum()))
             col4.metric("Duplicate Rows", summary["duplicates"])
-
             st.divider()
 
             tab1, tab2, tab3, tab4 = st.tabs(["Column Types", "Missing Values", "Numerical Stats", "Categorical Stats"])
-
             with tab1:
                 type_df = summary["dtypes"].reset_index()
                 type_df.columns = ["Column", "Type"]
                 st.dataframe(type_df, use_container_width=True)
-
             with tab2:
                 missing_df = pd.DataFrame({
-                    "Column": summary["missing"].index,
+                    "Column":        summary["missing"].index,
                     "Missing Count": summary["missing"].values,
-                    "Missing %": summary["missing_pct"].values
+                    "Missing %":     summary["missing_pct"].values,
                 })
                 missing_df = missing_df[missing_df["Missing Count"] > 0]
                 if missing_df.empty:
                     st.success("No missing values found.")
                 else:
                     st.dataframe(missing_df, use_container_width=True)
-
             with tab3:
                 if "num_stats" in summary:
                     st.dataframe(summary["num_stats"].round(3), use_container_width=True)
                 else:
                     st.info("No numerical columns found.")
-
             with tab4:
                 if summary["cat_stats"]:
                     cat_df = pd.DataFrame(summary["cat_stats"]).T.reset_index()
@@ -518,178 +587,65 @@ def explore_data_page():
                 else:
                     st.info("No categorical columns found.")
 
-        # ==============================
-        # COLUMN DEEP DIVE
-        # ==============================
+        # ── Column Deep Dive ──────────────────────────────────────────────────
         with st.expander("Column Deep Dive", expanded=False):
             selected_col = st.selectbox("Select a column", df.columns.tolist(), key="deep_dive_col")
-
             if selected_col:
                 col_data = df[selected_col]
                 c1, c2, c3 = st.columns(3)
                 c1.metric("Unique Values", col_data.nunique())
-                c2.metric("Missing", int(col_data.isnull().sum()))
-                c3.metric("Missing %", f"{col_data.isnull().mean() * 100:.1f}%")
+                c2.metric("Missing",       int(col_data.isnull().sum()))
+                c3.metric("Missing %",     f"{col_data.isnull().mean() * 100:.1f}%")
 
                 if pd.api.types.is_numeric_dtype(col_data):
                     c4, c5, c6 = st.columns(3)
-                    c4.metric("Mean", f"{col_data.mean():.3f}")
-                    c5.metric("Std Dev", f"{col_data.std():.3f}")
+                    c4.metric("Mean",     f"{col_data.mean():.3f}")
+                    c5.metric("Std Dev",  f"{col_data.std():.3f}")
                     c6.metric("Skewness", f"{col_data.skew():.3f}")
 
                 chart_data, chart_type = get_column_chart_data(df_hash, selected_col, str(col_data.dtype), df)
-
                 if chart_data.shape[0] == 0:
                     st.info("No data to display.")
                 else:
                     if chart_type == "numeric" and col_data.nunique() > MAX_CHART_ROWS:
-                        st.caption(f"Distribution shown as 50 bins (column has {col_data.nunique():,} unique values).")
+                        st.caption(f"Distribution shown as 50 bins ({col_data.nunique():,} unique values).")
                     elif chart_type == "categorical" and col_data.nunique() > MAX_CHART_ROWS:
-                        st.caption(f"Showing top {MAX_CHART_ROWS} most frequent values ({col_data.nunique():,} unique total).")
+                        st.caption(f"Top {MAX_CHART_ROWS} of {col_data.nunique():,} unique values shown.")
                     st.bar_chart(chart_data)
 
-        # ==============================
-        # CORRELATIONS
-        # ==============================
+        # ── Correlations ──────────────────────────────────────────────────────
         if "top_correlations" in summary:
             with st.expander("Top Feature Correlations", expanded=False):
                 st.dataframe(
-                    summary["top_correlations"].style.background_gradient(
-                        subset=["Correlation"], cmap="YlOrRd"
-                    ),
-                    use_container_width=True
+                    summary["top_correlations"].style.background_gradient(subset=["Correlation"], cmap="YlOrRd"),
+                    use_container_width=True,
                 )
 
-        # ==============================
-        # AI SUMMARY
-        # ==============================
+        # ── AI Summary ────────────────────────────────────────────────────────
         with st.expander("AI Summary", expanded=True):
-
             if "ai_summary_parsed" not in st.session_state:
                 with st.spinner("Generating AI analysis..."):
                     prompt = build_analysis_prompt(summary, df.head().to_string())
-                    raw = call_nvidia_llm(prompt)
+                    raw    = call_nvidia_llm(prompt)
                     st.session_state["ai_summary_raw"] = raw
-
                     parsed, err = parse_llm_json(raw)
                     if parsed:
                         st.session_state["ai_summary_parsed"] = parsed
                     else:
                         st.session_state["ai_summary_parsed"] = None
-                        st.session_state["ai_summary_error"] = err
+                        st.session_state["ai_summary_error"]  = err
 
             if st.session_state.get("ai_summary_parsed"):
                 render_ai_summary(st.session_state["ai_summary_parsed"])
-
-                if st.download_button(
+                st.download_button(
                     label="Download AI Summary",
                     data=json.dumps(st.session_state["ai_summary_parsed"], indent=2),
                     file_name="ai_summary.json",
-                    mime="application/json"
-                ):
-                    pass
+                    mime="application/json",
+                )
             else:
                 st.warning("Could not parse structured response. Raw output:")
                 st.write(st.session_state.get("ai_summary_raw", "No response."))
-
-        # ==============================
-        # TRAIN MODEL
-        # ==============================
-        parsed_summary = st.session_state.get("ai_summary_parsed")
-
-        if parsed_summary:
-            with st.expander("🤖 Train Model", expanded=True):
-
-                st.markdown(
-                    "The LLM will generate a **custom training script** for your dataset and selected model, "
-                    "then execute it in real time and show you the results."
-                )
-
-                suggested_models = [m["name"] for m in parsed_summary.get("suggested_models", [])]
-                if not suggested_models:
-                    suggested_models = ["Random Forest", "Logistic Regression", "XGBoost"]
-
-                col_left, col_right = st.columns(2)
-
-                with col_left:
-                    selected_model = st.selectbox(
-                        "Select model to train",
-                        options=suggested_models,
-                        key="selected_model"
-                    )
-
-                with col_right:
-                    all_cols = df.columns.tolist()
-                    guessed_target = parsed_summary.get("target_column_guess")
-                    default_idx = all_cols.index(guessed_target) if guessed_target in all_cols else 0
-                    target_col = st.selectbox(
-                        "Target column",
-                        options=all_cols,
-                        index=default_idx,
-                        key="target_col"
-                    )
-
-                problem_type = parsed_summary.get("problem_type", "classification")
-
-                st.caption(
-                    f"Problem type: **{problem_type}** \u00b7 "
-                    f"Dataset: **{df.shape[0]:,} rows \u00d7 {df.shape[1]} columns**"
-                )
-
-                train_btn = st.button("\u26a1 Generate Code & Train", type="primary", key="train_btn")
-
-                if train_btn:
-                    for key in ["training_results", "training_code", "training_error"]:
-                        st.session_state.pop(key, None)
-
-                    with st.spinner(f"Asking LLM to write training code for **{selected_model}**..."):
-                        code_prompt = build_training_code_prompt(
-                            df, summary, selected_model, problem_type, target_col
-                        )
-                        raw_code = call_nvidia_llm(code_prompt, max_tokens=2000)
-
-                    # Strip accidental markdown fences
-                    clean_code = raw_code.strip()
-                    if clean_code.startswith("```"):
-                        clean_code = "\n".join(clean_code.split("\n")[1:])
-                    if clean_code.endswith("```"):
-                        clean_code = "\n".join(clean_code.split("\n")[:-1])
-                    clean_code = clean_code.strip()
-
-                    st.session_state["training_code"] = clean_code
-
-                    with st.spinner("Executing generated code..."):
-                        results, stdout_str, error_str = execute_generated_code(clean_code, df)
-
-                    st.session_state["training_results"] = results
-                    st.session_state["training_error"] = error_str
-
-                if "training_results" in st.session_state:
-                    error = st.session_state.get("training_error")
-
-                    if error:
-                        st.error("The generated code raised an error during execution.")
-                        with st.expander("Execution Error", expanded=True):
-                            st.code(error, language="python")
-                        st.info(
-                            "This can happen if the LLM made an assumption about your data that didn't hold. "
-                            "Try clicking **Generate Code & Train** again \u2014 the LLM may produce a corrected script."
-                        )
-                    else:
-                        st.success("Training complete!")
-                        render_training_results(st.session_state["training_results"])
-
-                    if "training_code" in st.session_state:
-                        with st.expander("View Generated Code", expanded=False):
-                            st.code(st.session_state["training_code"], language="python")
-                            st.download_button(
-                                label="Download training script",
-                                data=st.session_state["training_code"],
-                                file_name=f"train_{selected_model.lower().replace(' ', '_')}.py",
-                                mime="text/plain",
-                                key="download_code_btn"
-                            )
-
 
 if __name__ == "__main__":
     st.set_page_config(page_title="AI Playground", layout="wide")
