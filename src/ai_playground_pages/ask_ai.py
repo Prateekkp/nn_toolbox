@@ -28,13 +28,27 @@ def _load_env_file():
 
 LOADED_ENV_PATH = _load_env_file()
 
+
+def _get_groq_api_key():
+    """Resolve API key from Streamlit secrets first, then environment variables."""
+    try:
+        secret_key = (st.secrets.get("GROQ_API_KEY", "") or "").strip()
+    except Exception:
+        secret_key = ""
+
+    if secret_key:
+        return secret_key, "streamlit_secrets"
+
+    env_key = (os.getenv("GROQ_API_KEY", "") or "").strip()
+    if env_key:
+        return env_key, "environment"
+
+    return "", "missing"
+
 # ==============================
 # CONFIG
 # ==============================
-GROQ_API_KEY = (
-    os.getenv("GROQ_API_KEY", "")
-    or "gsk_PASTE-YOUR-GROQ-KEY-HERE"  # optional local fallback for quick testing
-).strip()
+GROQ_API_KEY, GROQ_API_KEY_SOURCE = _get_groq_api_key()
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL_ID     = "llama-3.3-70b-versatile"  # best free Groq model
 MAX_FILE_SIZE_MB = 50
@@ -46,7 +60,7 @@ MAX_CHART_ROWS   = 100
 # ==============================
 def call_nvidia_llm(prompt, retries=2, max_tokens=1000):
     """Kept original name to avoid touching every call-site — backed by Groq now."""
-    if not GROQ_API_KEY or GROQ_API_KEY == "gsk_PASTE-YOUR-GROQ-KEY-HERE":
+    if not GROQ_API_KEY:
         st.error("GROQ_API_KEY not set. Add it to .env or paste it in the config above.")
         st.stop()
 
@@ -75,7 +89,11 @@ def call_nvidia_llm(prompt, retries=2, max_tokens=1000):
                 st.caption(f"Response: {response.text}")
                 st.stop()
             elif response.status_code == 403:
-                st.error("❌ 403 — Groq access denied. Check your key at console.groq.com.")
+                st.error("❌ 403 — Groq access denied.")
+                st.caption(
+                    "Key exists but authorization failed. In Streamlit Cloud, set GROQ_API_KEY in App Settings -> Secrets. "
+                    "If already set, rotate/regenerate the key in console.groq.com and redeploy."
+                )
                 st.caption(f"Response: {response.text}")
                 st.stop()
             elif response.status_code == 429:
@@ -480,20 +498,26 @@ def explore_data_page():
     st.title("Explore Your Data with AI Assistance")
     st.caption("Upload a CSV dataset for automated EDA and AI-generated insights.")
 
-    if not GROQ_API_KEY or GROQ_API_KEY == "gsk_PASTE-YOUR-GROQ-KEY-HERE":
+    if not GROQ_API_KEY:
         st.error("❌ GROQ_API_KEY not found or not set.")
-        if LOADED_ENV_PATH is not None:
-            st.caption(f"Detected .env at: {LOADED_ENV_PATH}")
+        if GROQ_API_KEY_SOURCE == "streamlit_secrets":
+            st.caption("Key source: Streamlit Secrets")
+        elif GROQ_API_KEY_SOURCE == "environment":
+            st.caption("Key source: Environment variable")
+            if LOADED_ENV_PATH is not None:
+                st.caption(f"Detected .env at: {LOADED_ENV_PATH}")
         else:
-            st.caption("No .env file was detected automatically.")
+            st.caption("No GROQ_API_KEY found in Streamlit Secrets or environment variables.")
         st.markdown(
             """
             **How to fix:**
             1. Go to [console.groq.com](https://console.groq.com) → API Keys → Create key
-            2. Add `GROQ_API_KEY=gsk_xxxxxxxxxxxx` to your project `.env` file (repo root)
-            3. Restart Streamlit
-
-            **Or** paste your key directly in the `GROQ_API_KEY` line at the top of this file.
+            2. For Streamlit Cloud: App Settings → Secrets, add:
+               ```toml
+               GROQ_API_KEY = "gsk_xxxxxxxxxxxx"
+               ```
+            3. For local runs: add `GROQ_API_KEY=gsk_xxxxxxxxxxxx` to project `.env`
+            4. Restart/redeploy the app
             """
         )
         return
@@ -503,9 +527,7 @@ def explore_data_page():
         st.info(
             "**What This Tool Does**\n\n"
             "- Auto-profile datasets (missing values, distributions, correlations)\n"
-            "- LLM analysis (problem type, model suggestions, data quality)\n"
-            "- Auto-generate & execute custom training scripts\n"
-            "- Return metrics and feature importances"
+            "- LLM analysis (problem type, model suggestions, data quality)"
         )
     with col2:
         st.warning(
