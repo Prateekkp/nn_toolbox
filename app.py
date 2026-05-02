@@ -10,8 +10,6 @@ from src.learner_pages.forward_propagation import forward_propagation_page
 from src.learner_pages.backward_propagation import backward_propagation_page
 from src.learner_pages.mlp import mlp_page
 from src.ai_playground_pages.ask_ai import explore_data_page
-from src.ai_playground_pages.personality_decoder import personality_decoder_page
-from src.ai_playground_pages.palm import palm_reader_page
 from src.application_pages.rnn.rnn_landing import rnn_application_page
 
 # ---------------------------
@@ -28,27 +26,6 @@ st.set_page_config(
 # Sidebar: Navigation
 # ---------------------------
 st.sidebar.title("Navigation")
-
-
-def _reset_palm_state():
-    for key in ["palm_phase", "palm_result", "palm_image_bytes", "palm_annotated_img", "palm_line_count"]:
-        st.session_state.pop(key, None)
-
-
-def _reset_personality_state():
-    for key in [
-        "pd_phase",
-        "pd_name",
-        "pd_name_lines",
-        "pd_question_mode",
-        "pd_age",
-        "pd_profession",
-        "pd_dynamic_step",
-        "pd_dynamic_answers",
-        "pd_current_question",
-    ]:
-        st.session_state.pop(key, None)
-
 
 def _activate_ai_playground():
     st.session_state["learner_nav"] = None
@@ -88,7 +65,7 @@ st.sidebar.markdown("**AI Playground**")
 st.sidebar.caption("Use AI to quickly explore uploaded datasets.")
 ai_playground_page = st.sidebar.selectbox(
     "AI Playground",
-    ["Explore Data", "Personality Decoder", "Palm Reader"],
+    ["Explore Data"],
     index=None,
     placeholder="Pick a tool...",
     key="ai_playground_nav",
@@ -165,10 +142,6 @@ else:
 
 previous_page = st.session_state.get("_active_page")
 if previous_page != page:
-    if page == "Palm Reader":
-        _reset_palm_state()
-    elif page == "Personality Decoder":
-        _reset_personality_state()
     st.session_state["_active_page"] = page
 
 # ---------------------------
@@ -243,11 +216,6 @@ elif page == "RNN":
 elif page == "Explore Data":
     explore_data_page()
 
-elif page == "Personality Decoder":
-    personality_decoder_page()
-
-elif page == "Palm Reader":
-    palm_reader_page()
 
 elif page == "Docs - Perceptron":
     perceptron_docs_page()
